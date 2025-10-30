@@ -51,7 +51,7 @@ export function AdminDashboard() {
   ];
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto max-w-screen-xl px-6 lg:px-12 py-8">
       <div className="mb-6">
         <h2>Dashboard Admin</h2>
         <p className="text-gray-600">Monitor dan kelola platform UrTree Marketplace</p>

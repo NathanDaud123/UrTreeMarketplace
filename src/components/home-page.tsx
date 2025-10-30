@@ -83,7 +83,7 @@ export function HomePage({ onCategorySelect, onProductSelect, currentUser, isPro
         <div className="absolute inset-0 bg-grid-white/[0.05] bg-[size:20px_20px]"></div>
         <div className="absolute inset-0 bg-gradient-to-t from-green-900/50 to-transparent"></div>
         
-        <div className="container mx-auto px-4 py-20 relative">
+        <div className="container mx-auto max-w-screen-xl px-8 lg:pl-48 lg:pr-24 xl:pl-64 xl:pr-32 py-20 relative">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             {/* Left Content - Text */}
             <div className="max-w-2xl">

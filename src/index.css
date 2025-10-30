@@ -4119,7 +4119,7 @@
 }
 
 html {
-  font-size: var(--font-size);
+  font-size: 90%;
 }
 
 @property --tw-translate-x {
