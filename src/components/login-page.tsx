@@ -94,6 +94,13 @@ export function LoginPage({ onSuccess, onBack }: LoginPageProps) {
     try {
       const result = await loginWithGoogle();
       
+      // If redirecting, show message
+      if (result?.message?.includes('Redirecting')) {
+        toast.info('Mengarahkan ke Google...');
+        // onSuccess will be called after OAuth callback
+        return;
+      }
+      
       // Show success message
       if (result?.message) {
         toast.success('🎉 ' + result.message);
@@ -101,20 +108,13 @@ export function LoginPage({ onSuccess, onBack }: LoginPageProps) {
         toast.success('✅ Login dengan Google berhasil!');
       }
       
-      // Add info toast about mock implementation
-      setTimeout(() => {
-        toast.info('💡 Tip: Ini adalah demo mode. Lihat GOOGLE_OAUTH_SETUP.md untuk production setup.', {
-          duration: 5000
-        });
-      }, 1500);
-      
       onSuccess();
     } catch (error: any) {
       console.error('Google login error:', error);
       
       // Show more helpful error message
-      if (error.message?.includes('configuration')) {
-        toast.error('⚙️ Google OAuth belum dikonfigurasi. Menggunakan demo mode...');
+      if (error.message?.includes('configuration') || error.message?.includes('provider')) {
+        toast.error('⚙️ Google OAuth belum dikonfigurasi. Lihat GOOGLE_OAUTH_SETUP.md untuk setup.');
       } else {
         toast.error('❌ Login dengan Google gagal. Silakan coba lagi.');
       }

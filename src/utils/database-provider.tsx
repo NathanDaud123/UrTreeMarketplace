@@ -1,10 +1,16 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { userAPI, productAPI, cartAPI, orderAPI, chatAPI } from './api';
 import { checkAndSeedData } from './seed-data';
+import { createClient } from '@jsr/supabase__supabase-js@2.49.8';
+import { supabaseUrl, publicAnonKey } from './supabase/info';
+import { toast } from 'sonner@2.0.3';
 import type { User, Product, CartItem } from '../App';
 import type { Transaction } from '../components/transaction-history-buyer';
 import type { SellerTransaction } from '../components/transaction-history-seller';
 import type { ChatConversation } from '../components/chat-page';
+
+// Create Supabase client for Auth
+const supabase = createClient(supabaseUrl, publicAnonKey);
 
 interface DatabaseContextType {
   // User
@@ -75,18 +81,178 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
 
-  // Initialize database on mount
-  useEffect(() => {
-    const initialize = async () => {
+  // Cart functions (defined early so it can be used in OAuth callback)
+  const loadCart = async (userEmail?: string) => {
+    const email = userEmail || currentUser?.email;
+    if (!email) return;
+    
+    // Check if user is buyer (we'll check after setting currentUser)
+    try {
+      const { cart: loadedCart } = await cartAPI.get(email);
+      setCart(loadedCart);
+    } catch (error) {
+      console.error('Load cart failed:', error);
+    }
+  };
+
+  // Helper function to sync Google user to our database
+  const syncGoogleUserToDatabase = async (supabaseUser: any) => {
+    try {
+      const userEmail = supabaseUser.email;
+      if (!userEmail) {
+        console.error('No email in Supabase user');
+        return;
+      }
+      
+      // Check if user exists in our database (KV Store)
+      let dbUser;
       try {
-        await checkAndSeedData();
-        setIsInitialized(true);
+        const userResponse = await userAPI.getUser(userEmail);
+        dbUser = userResponse?.user;
       } catch (error) {
-        console.error('Failed to initialize database:', error);
+        // User doesn't exist, that's okay
+        dbUser = null;
+      }
+      
+      if (!dbUser) {
+        // Create new user in our database
+        const userName = supabaseUser.user_metadata?.full_name || 
+                        supabaseUser.user_metadata?.name || 
+                        supabaseUser.email?.split('@')[0] || 
+                        'User';
+        
+        const newUser = {
+          email: userEmail,
+          name: userName,
+          password: 'google-oauth-' + Date.now(), // Auto-generated, user won't use this
+          role: 'buyer',
+          isPendingSeller: false,
+          hasSellerAccount: false,
+          createdAt: new Date().toISOString(),
+          googleId: supabaseUser.id,
+          avatar: supabaseUser.user_metadata?.avatar_url || supabaseUser.user_metadata?.picture,
+          loginMethod: 'google'
+        };
+        
+        // Register user in our system
+        try {
+          await userAPI.register(newUser.email, newUser.password, newUser.name);
+          
+          // Update with Google info
+          await userAPI.updateUser(newUser.email, {
+            googleId: newUser.googleId,
+            avatar: newUser.avatar,
+            loginMethod: 'google'
+          });
+          
+          dbUser = newUser;
+        } catch (registerError: any) {
+          // If user already exists (race condition), try to get it
+          if (registerError.message?.includes('already exists')) {
+            const userResponse = await userAPI.getUser(userEmail);
+            dbUser = userResponse?.user;
+          } else {
+            throw registerError;
+          }
+        }
+      } else {
+        // Update existing user with Google info if needed
+        if (!dbUser.googleId) {
+          try {
+            await userAPI.updateUser(userEmail, {
+              googleId: supabaseUser.id,
+              avatar: supabaseUser.user_metadata?.avatar_url || supabaseUser.user_metadata?.picture,
+              loginMethod: 'google'
+            });
+            
+            // Refresh user data
+            const userResponse = await userAPI.getUser(userEmail);
+            dbUser = userResponse?.user || dbUser;
+          } catch (updateError) {
+            console.error('Error updating user:', updateError);
+          }
+        }
+      }
+      
+        // Set current user
+        if (dbUser) {
+          setCurrentUser(dbUser);
+          
+          // Load user's cart (pass email since currentUser might not be updated yet)
+          if (dbUser.role === 'buyer') {
+            await loadCart(userEmail);
+          }
+          
+          toast.success('✅ Login dengan Google berhasil!');
+        }
+    } catch (error: any) {
+      console.error('Error syncing Google user:', error);
+      toast.error('Gagal menyinkronkan data user: ' + (error.message || 'Unknown error'));
+    }
+  };
+
+  // Handle OAuth callback from Google and check for existing session
+  useEffect(() => {
+    const handleAuthSession = async () => {
+      try {
+        // Check for OAuth callback in URL hash (Supabase Auth uses hash)
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const accessToken = hashParams.get('access_token');
+        const error = hashParams.get('error');
+        const errorDescription = hashParams.get('error_description');
+        
+        // Handle OAuth errors
+        if (error) {
+          console.error('OAuth error:', error, errorDescription);
+          toast.error('Login dengan Google gagal: ' + (errorDescription || error));
+          // Clean URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+          return;
+        }
+        
+        // If we have an access token in URL, handle the callback
+        if (accessToken) {
+          // Get session from Supabase (this will set the session)
+          const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+          
+          if (sessionError || !session) {
+            console.error('Failed to get session:', sessionError);
+            toast.error('Gagal mendapatkan session');
+            window.history.replaceState({}, document.title, window.location.pathname);
+            return;
+          }
+          
+          // Get user from session
+          const supabaseUser = session.user;
+          
+          if (!supabaseUser) {
+            console.error('No user in session');
+            toast.error('Gagal mendapatkan data user');
+            window.history.replaceState({}, document.title, window.location.pathname);
+            return;
+          }
+          
+          // Sync user to our database (KV Store)
+          await syncGoogleUserToDatabase(supabaseUser);
+          
+          // Clean URL
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } else {
+          // Check for existing session on page load
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.user) {
+            // User already logged in via Google, sync to our database
+            await syncGoogleUserToDatabase(session.user);
+          }
+        }
+      } catch (error) {
+        console.error('Auth session error:', error);
       }
     };
-    initialize();
-  }, []);
+    
+    handleAuthSession();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   // User functions
   const login = async (email: string, password: string) => {
@@ -111,17 +277,29 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       const result = await userAPI.loginWithGoogle();
+      
+      // If we get a redirectUrl, it means we need to redirect to Google
+      if (result.redirectUrl) {
+        // Redirect to Google OAuth
+        window.location.href = result.redirectUrl;
+        // Return early - the OAuth callback will handle the rest
+        return { user: null as any, message: 'Redirecting to Google...' };
+      }
+      
+      // If we get user directly (shouldn't happen with OAuth, but handle it)
       const { user, message } = result;
       
-      setCurrentUser(user);
-      
-      // Load user's cart
-      if (user.role === 'buyer') {
-        await loadCart();
+      if (user) {
+        setCurrentUser(user);
+        
+        // Load user's cart
+        if (user.role === 'buyer') {
+          await loadCart();
+        }
       }
       
       // Return result with message for UI feedback
-      return { user, message };
+      return { user: user || null, message };
     } catch (error) {
       console.error('Google login failed:', error);
       throw error;
@@ -301,17 +479,7 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Cart functions
-  const loadCart = async () => {
-    if (!currentUser || currentUser.role !== 'buyer') return;
-    
-    try {
-      const { cart: loadedCart } = await cartAPI.get(currentUser.email);
-      setCart(loadedCart);
-    } catch (error) {
-      console.error('Load cart failed:', error);
-    }
-  };
+  // loadCart is already defined above for OAuth callback
 
   const updateCart = async (newCart: CartItem[]) => {
     if (!currentUser) return;

@@ -1,6 +1,10 @@
 import { supabaseUrl, publicAnonKey } from './supabase/info';
+import { createClient } from '@jsr/supabase__supabase-js@2.49.8';
 
 const API_BASE_URL = `${supabaseUrl}/functions/v1/make-server-0eb859c3`;
+
+// Create Supabase client for Auth
+const supabase = createClient(supabaseUrl, publicAnonKey);
 
 // Helper function to make API requests
 async function apiRequest(
@@ -63,8 +67,38 @@ export const userAPI = {
   },
 
   loginWithGoogle: async () => {
-    return apiRequest('/users/google-login', 'POST');
+    try {
+      // Use Supabase Auth for Google OAuth
+      // Get current path for redirect
+      const redirectUrl = window.location.origin + window.location.pathname;
+      
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: redirectUrl,
+          queryParams: {
+            access_type: 'offline',
+            prompt: 'consent',
+          }
+        }
+      });
+      
+      if (error) {
+        console.error('Google OAuth error:', error);
+        throw new Error(error.message || 'Failed to initiate Google login');
+      }
+      
+      // This will redirect to Google, so we return the URL
+      // The actual login will happen in the callback
+      return { redirectUrl: data.url, message: 'Redirecting to Google...' };
+    } catch (error: any) {
+      console.error('Google login error:', error);
+      throw error;
+    }
   },
+  
+  // Export supabase client for use in other files
+  getSupabaseClient: () => supabase,
 
   getUser: async (email: string) => {
     return apiRequest(`/users/${encodeURIComponent(email)}`);
