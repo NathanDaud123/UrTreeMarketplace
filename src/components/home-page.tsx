@@ -107,9 +107,8 @@ export function HomePage({ onCategorySelect, onProductSelect, currentUser, isPro
                   Mulai Berbelanja
                 </Button>
                 <Button 
-                  size="lg" 
-                  variant="outline"
-                  className="border-2 border-white text-white hover:bg-white hover:text-green-600 backdrop-blur-sm shadow-lg transition-all"
+                  size="lg"
+                  className="bg-green-600 hover:bg-green-700 text-white shadow-lg transition-all"
                   onClick={() => {
                     const categorySection = document.querySelector('section');
                     categorySection?.scrollIntoView({ behavior: 'smooth', block: 'start' });

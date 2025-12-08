@@ -325,24 +325,6 @@ export function SettingsPage({ user, onUpdateUser, onSwitchRole }: SettingsPageP
 
               <Separator />
 
-              {/* Two Factor */}
-              <div>
-                <h4 className="font-semibold mb-4">Autentikasi Dua Faktor</h4>
-                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-                      <Smartphone className="w-5 h-5 text-blue-600" />
-                    </div>
-                    <div>
-                      <p className="font-semibold">2FA via SMS</p>
-                      <p className="text-sm text-gray-500">Lindungi akun dengan kode verifikasi SMS</p>
-                    </div>
-                  </div>
-                  <Button variant="outline" size="sm">
-                    Aktifkan
-                  </Button>
-                </div>
-              </div>
             </CardContent>
           </Card>
 
