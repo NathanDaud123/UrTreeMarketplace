@@ -378,9 +378,14 @@ function AppContent() {
             user={currentUser}
             onUpdateUser={async (updatedUser) => {
               try {
-                await db.updateUser(updatedUser);
-              } catch (error) {
-                toast.error('Gagal memperbarui profil');
+                // Extract updates (exclude email as it shouldn't be changed)
+                const { email, ...updates } = updatedUser;
+                await db.updateUser(updates);
+                toast.success('Profil berhasil diperbarui');
+              } catch (error: any) {
+                console.error('Update user error:', error);
+                const errorMessage = error.message || 'Gagal memperbarui profil';
+                toast.error(errorMessage);
               }
             }}
             onApplyAsSeller={handleApplyAsSeller}
@@ -392,9 +397,21 @@ function AppContent() {
             user={currentUser}
             onUpdateUser={async (updatedUser) => {
               try {
-                await db.updateUser(updatedUser);
-              } catch (error) {
-                toast.error('Gagal memperbarui profil');
+                // Extract only the fields that changed (updates)
+                const updates: Partial<User> = {};
+                if (updatedUser.name !== currentUser?.name) updates.name = updatedUser.name;
+                if (updatedUser.email !== currentUser?.email) updates.email = updatedUser.email;
+                if (updatedUser.phone !== currentUser?.phone) updates.phone = updatedUser.phone;
+                if (updatedUser.address !== currentUser?.address) updates.address = updatedUser.address;
+                if (updatedUser.city !== currentUser?.city) updates.city = updatedUser.city;
+                if (updatedUser.hasPin !== currentUser?.hasPin) updates.hasPin = updatedUser.hasPin;
+                
+                await db.updateUser(updates);
+                toast.success('Profil berhasil diperbarui');
+              } catch (error: any) {
+                console.error('Update user error:', error);
+                const errorMessage = error.message || 'Gagal memperbarui profil';
+                toast.error(errorMessage);
               }
             }}
             onSwitchRole={handleSwitchRole}
