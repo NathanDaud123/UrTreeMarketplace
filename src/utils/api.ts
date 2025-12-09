@@ -51,6 +51,14 @@ async function apiRequest(
       message: error.message,
       error: error
     });
+    
+    // Better error messages for network errors
+    if (error.message?.includes('Failed to fetch') || 
+        error.message?.includes('NetworkError') ||
+        error.name === 'TypeError') {
+      throw new Error(`Tidak dapat terhubung ke server. Pastikan edge function sudah di-deploy di Supabase.`);
+    }
+    
     throw error;
   }
 }

@@ -109,9 +109,22 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
       try {
         const userResponse = await userAPI.getUser(userEmail);
         dbUser = userResponse?.user;
-      } catch (error) {
-        // User doesn't exist, that's okay
-        dbUser = null;
+        console.log('✅ User found in database:', userEmail);
+      } catch (error: any) {
+        // User doesn't exist (404) or network error
+        if (error.message?.includes('not found') || error.message?.includes('404')) {
+          console.log('User not found, will create new user:', userEmail);
+          dbUser = null;
+        } else if (error.message?.includes('Tidak dapat terhubung') || 
+                   error.message?.includes('NetworkError')) {
+          console.warn('Network error checking user:', error.message);
+          // For network errors, we'll try to create user but use fallback if it fails
+          dbUser = null;
+        } else {
+          // Other errors - log but continue
+          console.warn('Error checking user, will try to create:', error.message);
+          dbUser = null;
+        }
       }
       
       if (!dbUser) {
@@ -134,60 +147,147 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
           loginMethod: 'google'
         };
         
-        // Register user in our system
+        // Try to register user in our system
         try {
           await userAPI.register(newUser.email, newUser.password, newUser.name);
+          console.log('✅ New user registered:', userEmail);
           
           // Update with Google info
-          await userAPI.updateUser(newUser.email, {
-            googleId: newUser.googleId,
-            avatar: newUser.avatar,
-            loginMethod: 'google'
-          });
+          try {
+            await userAPI.updateUser(newUser.email, {
+              googleId: newUser.googleId,
+              avatar: newUser.avatar,
+              loginMethod: 'google'
+            });
+            console.log('✅ Google info updated for user:', userEmail);
+          } catch (updateError) {
+            // If update fails, continue anyway (user is already created)
+            console.warn('Failed to update Google info, but user is created:', updateError);
+          }
           
-          dbUser = newUser;
+          // Get the created user from database to ensure we have all fields
+          try {
+            const userResponse = await userAPI.getUser(userEmail);
+            dbUser = userResponse?.user || newUser;
+          } catch (getError) {
+            // If we can't get user, use the newUser data we have
+            console.warn('Can\'t fetch created user, using local data');
+            dbUser = newUser;
+          }
         } catch (registerError: any) {
-          // If user already exists (race condition), try to get it
-          if (registerError.message?.includes('already exists')) {
+          // If register fails, it might be because user already exists
+          // Try to get the existing user
+          console.log('Register failed, checking if user already exists:', registerError.message);
+          
+          try {
             const userResponse = await userAPI.getUser(userEmail);
             dbUser = userResponse?.user;
-          } else {
-            throw registerError;
+            console.log('✅ User already exists, using existing data:', userEmail);
+          } catch (getError: any) {
+            // If we can't get user either, check error type
+            if (registerError.message?.includes('already exists') || 
+                registerError.message?.includes('User already exists')) {
+              // User exists but we can't fetch it - use local data
+              console.warn('User exists but can\'t fetch, using local data');
+              dbUser = newUser;
+            } else if (registerError.message?.includes('Tidak dapat terhubung') || 
+                       registerError.message?.includes('NetworkError') ||
+                       getError.message?.includes('Tidak dapat terhubung') ||
+                       getError.message?.includes('NetworkError')) {
+              // Network error - use local data so user can still use the app
+              console.warn('Network error during registration, using local user data');
+              dbUser = newUser;
+            } else {
+              // Other error - log but use local data as fallback
+              console.error('Registration error, using local data as fallback:', registerError);
+              dbUser = newUser;
+            }
           }
         }
       } else {
-        // Update existing user with Google info if needed
-        if (!dbUser.googleId) {
+        // User exists - update with Google info if needed
+        console.log('User exists, checking if Google info needs update');
+        if (!dbUser.googleId || !dbUser.avatar) {
           try {
             await userAPI.updateUser(userEmail, {
               googleId: supabaseUser.id,
-              avatar: supabaseUser.user_metadata?.avatar_url || supabaseUser.user_metadata?.picture,
+              avatar: supabaseUser.user_metadata?.avatar_url || supabaseUser.user_metadata?.picture || dbUser.avatar,
               loginMethod: 'google'
             });
             
             // Refresh user data
-            const userResponse = await userAPI.getUser(userEmail);
-            dbUser = userResponse?.user || dbUser;
+            try {
+              const userResponse = await userAPI.getUser(userEmail);
+              dbUser = userResponse?.user || dbUser;
+            } catch (getError) {
+              console.warn('Can\'t refresh user after update, using existing data');
+            }
           } catch (updateError) {
-            console.error('Error updating user:', updateError);
+            // If update fails, continue with existing user data
+            console.warn('Error updating user Google info, using existing data:', updateError);
           }
         }
       }
       
-        // Set current user
-        if (dbUser) {
-          setCurrentUser(dbUser);
-          
-          // Load user's cart (pass email since currentUser might not be updated yet)
-          if (dbUser.role === 'buyer') {
-            await loadCart(userEmail);
-          }
-          
-          toast.success('✅ Login dengan Google berhasil!');
+      // Set current user
+      if (dbUser) {
+        setCurrentUser(dbUser);
+        
+        // Load user's cart (pass email since currentUser might not be updated yet)
+        if (dbUser.role === 'buyer') {
+          await loadCart(userEmail);
         }
+        
+        toast.success('✅ Login dengan Google berhasil!');
+      }
     } catch (error: any) {
       console.error('Error syncing Google user:', error);
-      toast.error('Gagal menyinkronkan data user: ' + (error.message || 'Unknown error'));
+      
+      // Even if sync fails, try to set user from Supabase data so they can use the app
+      if (supabaseUser?.email) {
+        const fallbackUser = {
+          email: supabaseUser.email,
+          name: supabaseUser.user_metadata?.full_name || 
+                supabaseUser.user_metadata?.name || 
+                supabaseUser.email?.split('@')[0] || 
+                'User',
+          role: 'buyer' as const,
+          isPendingSeller: false,
+          hasSellerAccount: false,
+          googleId: supabaseUser.id,
+          avatar: supabaseUser.user_metadata?.avatar_url || supabaseUser.user_metadata?.picture,
+          loginMethod: 'google' as const
+        };
+        
+        setCurrentUser(fallbackUser);
+        console.warn('Using fallback user data from Supabase Auth');
+        
+        // Load cart for fallback user
+        try {
+          await loadCart(supabaseUser.email);
+        } catch (cartError) {
+          console.warn('Could not load cart for fallback user');
+        }
+        
+        // Show success message even with fallback (user can still use the app)
+        toast.success('✅ Login dengan Google berhasil!', {
+          description: 'Menggunakan data sementara. Beberapa fitur mungkin terbatas.'
+        });
+      } else {
+        // Only show error if we can't even create fallback user
+        let errorMessage = 'Gagal menyinkronkan data user';
+        
+        if (error.message?.includes('Tidak dapat terhubung') || 
+            error.message?.includes('NetworkError')) {
+          errorMessage = 'Tidak dapat terhubung ke server. Pastikan edge function sudah di-deploy di Supabase.';
+        } else {
+          errorMessage += ': ' + (error.message || 'Unknown error');
+        }
+        
+        toast.error(errorMessage, {
+          duration: 8000
+        });
+      }
     }
   };
 

@@ -113,10 +113,15 @@ export function LoginPage({ onSuccess, onBack }: LoginPageProps) {
       console.error('Google login error:', error);
       
       // Show more helpful error message
-      if (error.message?.includes('configuration') || error.message?.includes('provider')) {
-        toast.error('⚙️ Google OAuth belum dikonfigurasi. Lihat GOOGLE_OAUTH_SETUP.md untuk setup.');
+      if (error.message?.includes('configuration') || 
+          error.message?.includes('provider') || 
+          error.message?.includes('OAuth secret') ||
+          error.message?.includes('missing OAuth')) {
+        toast.error('⚙️ Google OAuth belum dikonfigurasi di Supabase. Lihat FIX_GOOGLE_OAUTH.md untuk setup.', {
+          duration: 8000
+        });
       } else {
-        toast.error('❌ Login dengan Google gagal. Silakan coba lagi.');
+        toast.error('❌ Login dengan Google gagal: ' + (error.message || 'Unknown error'));
       }
     }
   };
