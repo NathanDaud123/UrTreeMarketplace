@@ -68,23 +68,28 @@ export function ProfilePage({ user, onUpdateUser, onApplyAsSeller }: ProfilePage
   const [kycAccountNumber, setKycAccountNumber] = useState('');
   const [kycAccountName, setKycAccountName] = useState('');
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     if (!editedName || !editedEmail) {
       toast.error('Nama dan email tidak boleh kosong');
       return;
     }
 
-    onUpdateUser({
-      ...user,
-      name: editedName,
-      email: editedEmail,
-      phone,
-      address,
-      city,
-    });
-
-    setIsEditing(false);
-    toast.success('Profil berhasil diperbarui');
+    try {
+      await onUpdateUser({
+        ...user,
+        name: editedName,
+        email: editedEmail,
+        phone,
+        address,
+        city,
+      });
+      
+      setIsEditing(false);
+      // Toast success akan muncul dari App.tsx setelah update berhasil
+    } catch (error) {
+      // Error handling sudah dilakukan di App.tsx
+      // Jangan tutup edit mode jika error
+    }
   };
 
   const handleCancelEdit = () => {

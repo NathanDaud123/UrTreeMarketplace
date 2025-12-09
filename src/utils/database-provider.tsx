@@ -432,14 +432,24 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   };
 
   const updateUser = async (updates: Partial<User>) => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      throw new Error('User not logged in');
+    }
     
     setIsLoading(true);
     try {
+      console.log('Updating user:', currentUser.email, 'with updates:', updates);
       const { user } = await userAPI.updateUser(currentUser.email, updates);
+      console.log('User updated successfully:', user);
       setCurrentUser(user);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Update user failed:', error);
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        email: currentUser.email,
+        updates
+      });
       throw error;
     } finally {
       setIsLoading(false);
