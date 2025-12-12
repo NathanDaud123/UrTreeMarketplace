@@ -57,7 +57,7 @@ app.post("/make-server-0eb859c3/users/register", async (c) => {
     }
 
     // Check if admin email
-    const adminEmails = ['admin@urtree.com', 'admin@admin.com'];
+    const adminEmails = ['admin@urtree.id', 'admin@urtree.com', 'admin@admin.com'];
     const isAdmin = adminEmails.includes(email.toLowerCase());
 
     // Hash password (simple hash for now, in production use bcrypt)
@@ -162,7 +162,7 @@ app.post("/make-server-0eb859c3/users/google-login", async (c) => {
     let user;
     if (!existingUser) {
       // Create new user from Google data
-      const adminEmails = ['admin@urtree.com', 'admin@admin.com'];
+      const adminEmails = ['admin@urtree.id', 'admin@urtree.com', 'admin@admin.com'];
       const isAdmin = adminEmails.includes(googleUserInfo.email.toLowerCase());
       
       // Insert new user
@@ -242,7 +242,7 @@ app.post("/make-server-0eb859c3/users/google-login", async (c) => {
     let user;
     if (!existingUser) {
       // Create new user from Google data
-      const adminEmails = ['admin@urtree.com'];
+      const adminEmails = ['admin@urtree.id', 'admin@urtree.com'];
       const isAdmin = adminEmails.includes(googleUser.email.toLowerCase());
       
       const { data: newUser, error: insertError } = await supabase
@@ -451,41 +451,109 @@ app.put("/make-server-0eb859c3/users/:email", async (c) => {
 // Apply as seller / Seller registration
 app.post("/make-server-0eb859c3/users/:email/apply-seller", async (c) => {
   try {
-    const email = c.req.param("email");
+    const email = decodeURIComponent(c.req.param("email"));
     const sellerData = await c.req.json();
+    const supabase = getSupabaseClient();
     
-    const user = await kv.get(`user:${email}`);
-    if (!user) {
+    // Get user from database
+    const { data: user, error: userError } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", email)
+      .maybeSingle();
+    
+    if (userError || !user) {
       return c.json({ error: "User not found" }, 404);
     }
 
-    // Update user to seller role
-    const updatedUser = {
-      ...user,
-      role: 'seller',
-      hasSellerAccount: true,
-      shopName: sellerData.shopName,
-      shopDescription: sellerData.shopDescription,
-      shopAddress: sellerData.address,
-      shopCity: sellerData.city,
-      phone: sellerData.phone,
-      // KYC data
-      identityType: sellerData.identityType,
-      identityNumber: sellerData.identityNumber,
-      identityPhoto: sellerData.identityPhoto,
-      bankName: sellerData.bankName,
-      bankAccountNumber: sellerData.bankAccountNumber,
-      bankAccountName: sellerData.bankAccountName,
-      sellerApprovedAt: new Date().toISOString(),
+    // Check if seller profile already exists
+    const { data: existingProfile } = await supabase
+      .from("seller_profiles")
+      .select("*")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const profileData: any = {
+      user_id: user.id,
+      shop_name: sellerData.shopName,
+      shop_description: sellerData.shopDescription,
+      shop_address: sellerData.shopAddress || sellerData.address,
+      shop_city: sellerData.shopCity || sellerData.city,
+      shop_phone: sellerData.phone || user.phone,
+      identity_type: sellerData.identityType || 'KTP',
+      identity_number: sellerData.identityNumber || sellerData.kycKtpNumber,
+      identity_photo_url: sellerData.identityPhoto || sellerData.kycKtpPhoto,
+      bank_name: sellerData.bankName || sellerData.kycBankName,
+      bank_account_number: sellerData.bankAccountNumber || sellerData.kycAccountNumber,
+      bank_account_name: sellerData.bankAccountName || sellerData.kycAccountName,
+      kyc_status: 'pending', // Status pending, menunggu approval admin
+      updated_at: new Date().toISOString()
     };
 
-    await kv.set(`user:${email}`, updatedUser);
+    if (existingProfile) {
+      // Update existing profile
+      const { error: updateError } = await supabase
+        .from("seller_profiles")
+        .update(profileData)
+        .eq("user_id", user.id);
+      
+      if (updateError) {
+        console.log("Error updating seller profile:", updateError);
+        return c.json({ error: "Failed to update seller profile: " + updateError.message }, 500);
+      }
+    } else {
+      // Create new seller profile
+      profileData.created_at = new Date().toISOString();
+      const { error: insertError } = await supabase
+        .from("seller_profiles")
+        .insert(profileData);
+      
+      if (insertError) {
+        console.log("Error creating seller profile:", insertError);
+        return c.json({ error: "Failed to create seller profile: " + insertError.message }, 500);
+      }
+    }
+
+    // Update user to mark as pending seller (but keep role as buyer until approved)
+    const { error: updateUserError } = await supabase
+      .from("users")
+      .update({ 
+        updated_at: new Date().toISOString()
+      })
+      .eq("email", email);
+
+    if (updateUserError) {
+      console.log("Error updating user:", updateUserError);
+      // Don't fail the whole request if user update fails
+    }
+
+    // Get updated user
+    const { data: updatedUser } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", email)
+      .single();
+
+    // Get default address for response
+    const { data: defaultAddress } = await supabase
+      .from("user_addresses")
+      .select("*")
+      .eq("user_id", updatedUser.id)
+      .eq("is_default", true)
+      .maybeSingle();
+
+    let responseUser: any = { ...updatedUser, isPendingSeller: true };
+    if (defaultAddress) {
+      responseUser.address = defaultAddress.address;
+      responseUser.city = defaultAddress.city;
+    }
     
-    const { password: _, ...userWithoutPassword } = updatedUser;
+    // Remove password_hash from response
+    const { password_hash: _, ...userWithoutPassword } = responseUser;
     return c.json({ user: userWithoutPassword });
-  } catch (error) {
+  } catch (error: any) {
     console.log("Error applying as seller:", error);
-    return c.json({ error: "Failed to apply as seller" }, 500);
+    return c.json({ error: "Failed to apply as seller: " + (error.message || "Unknown error") }, 500);
   }
 });
 
@@ -1323,30 +1391,194 @@ app.get("/make-server-0eb859c3/admin/orders", async (c) => {
 // Get statistics (admin only)
 app.get("/make-server-0eb859c3/admin/stats", async (c) => {
   try {
-    const users = await kv.getByPrefix("user:");
-    const products = await kv.getByPrefix("product:");
-    const orders = await kv.getByPrefix("order:");
+    const supabase = getSupabaseClient();
     
-    const totalUsers = (users || []).length;
-    const totalBuyers = (users || []).filter((u: any) => u.role === 'buyer').length;
-    const totalSellers = (users || []).filter((u: any) => u.role === 'seller' || u.hasSellerAccount).length;
-    const totalProducts = (products || []).length;
-    const totalOrders = (orders || []).length;
-    const totalRevenue = (orders || []).reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
+    // Get total users
+    const { count: totalUsers } = await supabase
+      .from("users")
+      .select("*", { count: "exact", head: true });
+    
+    // Get total buyers
+    const { count: totalBuyers } = await supabase
+      .from("users")
+      .select("*", { count: "exact", head: true })
+      .eq("role", "buyer");
+    
+    // Get total sellers (users with role seller)
+    const { count: totalSellers } = await supabase
+      .from("users")
+      .select("*", { count: "exact", head: true })
+      .eq("role", "seller");
+    
+    // Get pending seller applications
+    const { count: pendingApplications } = await supabase
+      .from("seller_profiles")
+      .select("*", { count: "exact", head: true })
+      .eq("kyc_status", "pending");
+    
+    // Get total products (if products table exists)
+    let totalProducts = 0;
+    try {
+      const { count } = await supabase
+        .from("products")
+        .select("*", { count: "exact", head: true });
+      totalProducts = count || 0;
+    } catch (e) {
+      // Products table might not exist yet
+      console.log("Products table not found, skipping");
+    }
+    
+    // Get total orders (if orders table exists)
+    let totalOrders = 0;
+    let totalRevenue = 0;
+    try {
+      const { count } = await supabase
+        .from("orders")
+        .select("*", { count: "exact", head: true });
+      totalOrders = count || 0;
+      
+      // Get total revenue
+      const { data: orders } = await supabase
+        .from("orders")
+        .select("total_amount");
+      if (orders) {
+        totalRevenue = orders.reduce((sum: number, o: any) => sum + (parseFloat(o.total_amount) || 0), 0);
+      }
+    } catch (e) {
+      // Orders table might not exist yet
+      console.log("Orders table not found, skipping");
+    }
+    
+    // Get new users this month
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    
+    const { count: newUsersThisMonth } = await supabase
+      .from("users")
+      .select("*", { count: "exact", head: true })
+      .gte("created_at", startOfMonth.toISOString());
+    
+    // Get new sellers this month
+    const { count: newSellersThisMonth } = await supabase
+      .from("users")
+      .select("*", { count: "exact", head: true })
+      .eq("role", "seller")
+      .gte("created_at", startOfMonth.toISOString());
     
     return c.json({
       stats: {
-        totalUsers,
-        totalBuyers,
-        totalSellers,
-        totalProducts,
-        totalOrders,
-        totalRevenue,
+        totalUsers: totalUsers || 0,
+        totalBuyers: totalBuyers || 0,
+        totalSellers: totalSellers || 0,
+        pendingApplications: pendingApplications || 0,
+        totalProducts: totalProducts || 0,
+        totalOrders: totalOrders || 0,
+        totalRevenue: totalRevenue || 0,
+        newUsersThisMonth: newUsersThisMonth || 0,
+        newSellersThisMonth: newSellersThisMonth || 0,
       }
     });
-  } catch (error) {
+  } catch (error: any) {
     console.log("Error fetching stats:", error);
-    return c.json({ error: "Failed to fetch stats" }, 500);
+    return c.json({ error: "Failed to fetch stats: " + (error.message || "Unknown error") }, 500);
+  }
+});
+
+// Get pending seller applications (admin only)
+app.get("/make-server-0eb859c3/admin/seller-applications", async (c) => {
+  try {
+    const supabase = getSupabaseClient();
+    
+    // Get all pending seller applications with user info
+    const { data: applications, error } = await supabase
+      .from("seller_profiles")
+      .select(`
+        *,
+        users:user_id (
+          id,
+          email,
+          name,
+          phone,
+          created_at
+        )
+      `)
+      .eq("kyc_status", "pending")
+      .order("created_at", { ascending: false });
+    
+    if (error) {
+      console.log("Error fetching applications:", error);
+      return c.json({ error: "Failed to fetch applications: " + error.message }, 500);
+    }
+    
+    return c.json({ applications: applications || [] });
+  } catch (error: any) {
+    console.log("Error fetching seller applications:", error);
+    return c.json({ error: "Failed to fetch applications: " + (error.message || "Unknown error") }, 500);
+  }
+});
+
+// Approve or reject seller application (admin only)
+app.post("/make-server-0eb859c3/admin/seller-applications/:id/:action", async (c) => {
+  try {
+    const applicationId = c.req.param("id");
+    const action = c.req.param("action"); // 'approve' or 'reject'
+    const supabase = getSupabaseClient();
+    
+    if (action !== "approve" && action !== "reject") {
+      return c.json({ error: "Invalid action. Use 'approve' or 'reject'" }, 400);
+    }
+    
+    // Get seller profile
+    const { data: profile, error: profileError } = await supabase
+      .from("seller_profiles")
+      .select("*")
+      .eq("id", applicationId)
+      .single();
+    
+    if (profileError || !profile) {
+      return c.json({ error: "Seller application not found" }, 404);
+    }
+    
+    // Update seller profile status
+    const newStatus = action === "approve" ? "approved" : "rejected";
+    const { error: updateError } = await supabase
+      .from("seller_profiles")
+      .update({
+        kyc_status: newStatus,
+        kyc_verified_at: action === "approve" ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", applicationId);
+    
+    if (updateError) {
+      console.log("Error updating application:", updateError);
+      return c.json({ error: "Failed to update application: " + updateError.message }, 500);
+    }
+    
+    // If approved, update user role to seller
+    if (action === "approve") {
+      const { error: userUpdateError } = await supabase
+        .from("users")
+        .update({
+          role: "seller",
+          updated_at: new Date().toISOString()
+        })
+        .eq("id", profile.user_id);
+      
+      if (userUpdateError) {
+        console.log("Error updating user role:", userUpdateError);
+        // Don't fail the whole request, just log the error
+      }
+    }
+    
+    return c.json({ 
+      success: true, 
+      message: `Seller application ${action === "approve" ? "approved" : "rejected"} successfully` 
+    });
+  } catch (error: any) {
+    console.log("Error processing application:", error);
+    return c.json({ error: "Failed to process application: " + (error.message || "Unknown error") }, 500);
   }
 });
 

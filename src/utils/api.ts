@@ -268,6 +268,18 @@ export const adminAPI = {
   getStats: async () => {
     return apiRequest('/admin/stats');
   },
+
+  getSellerApplications: async () => {
+    return apiRequest('/admin/seller-applications');
+  },
+
+  approveSellerApplication: async (applicationId: string) => {
+    return apiRequest(`/admin/seller-applications/${applicationId}/approve`, 'POST');
+  },
+
+  rejectSellerApplication: async (applicationId: string) => {
+    return apiRequest(`/admin/seller-applications/${applicationId}/reject`, 'POST');
+  },
 };
 
 // ==================== PAYMENT API ====================

@@ -16,6 +16,7 @@ import { SellerOrderDetail } from './components/seller-order-detail';
 import { BuyerOrderDetail } from './components/buyer-order-detail';
 import { ChatPage, ChatList } from './components/chat-page';
 import { SellerRegistrationPage, type SellerRegistrationData } from './components/seller-registration-page';
+import { SellerApplicationStatusPage } from './components/seller-application-status-page';
 import type { SellerTransaction } from './components/transaction-history-seller';
 import type { Transaction } from './components/transaction-history-buyer';
 import type { ChatConversation } from './components/chat-page';
@@ -121,20 +122,18 @@ function AppContent() {
   };
 
   const handleApplyAsSeller = () => {
-    if (currentUser && currentUser.role === 'buyer') {
-      // Navigate to seller registration page
-      setCurrentPage('seller-registration');
-    }
+    // Navigate to seller registration page (unified page for all seller applications)
+    setCurrentPage('seller-registration');
   };
 
   const handleSellerRegistrationSubmit = async (data: SellerRegistrationData) => {
     if (currentUser) {
       try {
         await db.applySeller(data);
-        toast.success('🎉 Selamat! Anda sekarang terdaftar sebagai penjual di UrTree');
-        setCurrentPage('seller-dashboard');
+        // Redirect to status page instead of seller dashboard
+        setCurrentPage('seller-application-status');
       } catch (error) {
-        toast.error('Gagal mendaftar sebagai penjual. Silakan coba lagi.');
+        toast.error('Gagal mengajukan sebagai penjual. Silakan coba lagi.');
       }
     }
   };
@@ -363,6 +362,13 @@ function AppContent() {
             onBack={() => setCurrentPage('home')}
           />
         );
+      
+      case 'seller-application-status':
+        return (
+          <SellerApplicationStatusPage
+            onBackToProfile={() => setCurrentPage('profile')}
+          />
+        );
       case 'seller-dashboard':
         return <SellerDashboard />;
       case 'admin-dashboard':
@@ -395,7 +401,7 @@ function AppContent() {
                 throw error; // Re-throw agar profile-page bisa handle
               }
             }}
-            onApplyAsSeller={handleApplyAsSeller}
+            onNavigateToSellerRegistration={() => setCurrentPage('seller-registration')}
           />
         );
       case 'settings':

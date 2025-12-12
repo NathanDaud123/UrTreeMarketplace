@@ -41,32 +41,17 @@ import {
 
 interface ProfilePageProps {
   user: UserType;
-  onUpdateUser: (user: UserType) => void;
-  onApplyAsSeller: () => void;
+  onUpdateUser: (user: UserType) => Promise<void>;
+  onNavigateToSellerRegistration: () => void;
 }
 
-export function ProfilePage({ user, onUpdateUser, onApplyAsSeller }: ProfilePageProps) {
+export function ProfilePage({ user, onUpdateUser, onNavigateToSellerRegistration }: ProfilePageProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const [showSellerDialog, setShowSellerDialog] = useState(false);
   const [editedName, setEditedName] = useState(user.name);
   const [editedEmail, setEditedEmail] = useState(user.email);
   const [phone, setPhone] = useState(user.phone || '');
   const [address, setAddress] = useState(user.address || '');
   const [city, setCity] = useState(user.city || '');
-  
-  // Seller application data
-  const [shopName, setShopName] = useState('');
-  const [shopDescription, setShopDescription] = useState('');
-  const [shopAddress, setShopAddress] = useState('');
-  const [shopCity, setShopCity] = useState('');
-  
-  // KYC Data
-  const [kycPhone, setKycPhone] = useState('');
-  const [kycKtpNumber, setKycKtpNumber] = useState('');
-  const [kycKtpPhoto, setKycKtpPhoto] = useState<File | null>(null);
-  const [kycBankName, setKycBankName] = useState('');
-  const [kycAccountNumber, setKycAccountNumber] = useState('');
-  const [kycAccountName, setKycAccountName] = useState('');
 
   const handleSaveProfile = async () => {
     if (!editedName || !editedEmail) {
@@ -103,57 +88,6 @@ export function ProfilePage({ user, onUpdateUser, onApplyAsSeller }: ProfilePage
     setIsEditing(false);
   };
 
-  const handleApplySeller = () => {
-    // Validate shop data
-    if (!shopName || !shopDescription || !shopAddress || !shopCity) {
-      toast.error('Mohon lengkapi semua data toko');
-      return;
-    }
-
-    if (shopDescription.length < 50) {
-      toast.error('Deskripsi toko minimal 50 karakter');
-      return;
-    }
-
-    // Validate KYC data
-    if (!kycPhone || !kycKtpNumber || !kycBankName || !kycAccountNumber || !kycAccountName) {
-      toast.error('Mohon lengkapi semua data KYC (Verifikasi)');
-      return;
-    }
-
-    if (kycPhone.length < 10) {
-      toast.error('Nomor telepon tidak valid');
-      return;
-    }
-
-    if (kycKtpNumber.length !== 16) {
-      toast.error('Nomor KTP harus 16 digit');
-      return;
-    }
-
-    if (!kycKtpPhoto) {
-      toast.error('Mohon upload foto KTP Anda');
-      return;
-    }
-
-    // Update user with shop data
-    onUpdateUser({
-      ...user,
-      shopName,
-      shopDescription,
-      shopAddress,
-      shopCity,
-    });
-
-    // Trigger seller application
-    onApplyAsSeller();
-    setShowSellerDialog(false);
-    
-    // Simulate approval (in real app, this would be admin approval)
-    setTimeout(() => {
-      toast.success('🎉 Selamat! Pengajuan Anda disetujui. Anda sekarang adalah penjual di UrTree Marketplace!');
-    }, 2000);
-  };
 
   const getRoleBadge = () => {
     if (user.role === 'admin') {
@@ -267,7 +201,7 @@ export function ProfilePage({ user, onUpdateUser, onApplyAsSeller }: ProfilePage
                   <>
                     <Separator className="my-6" />
                     <Button
-                      onClick={() => setShowSellerDialog(true)}
+                      onClick={onNavigateToSellerRegistration}
                       className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800"
                     >
                       <Store className="w-4 h-4 mr-2" />
@@ -486,285 +420,6 @@ export function ProfilePage({ user, onUpdateUser, onApplyAsSeller }: ProfilePage
         </div>
       </div>
 
-      {/* Seller Application Dialog */}
-      <Dialog open={showSellerDialog} onOpenChange={setShowSellerDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold">Daftar Sebagai Penjual</DialogTitle>
-            <DialogDescription>
-              Lengkapi informasi toko Anda untuk bergabung sebagai penjual di UrTree Marketplace
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-6 py-4">
-            {/* Benefits */}
-            <div className="bg-gradient-to-br from-green-50 to-green-100 p-5 rounded-xl border border-green-200">
-              <h4 className="font-bold text-green-900 mb-3 flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5" />
-                Keuntungan Menjadi Penjual
-              </h4>
-              <ul className="space-y-2 text-sm text-green-800">
-                <li className="flex items-start gap-2">
-                  <span className="text-green-600 font-bold">✓</span>
-                  <span>Jangkau ribuan pembeli tanaman di seluruh Indonesia</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-green-600 font-bold">✓</span>
-                  <span>Dashboard lengkap untuk kelola produk & pesanan</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-green-600 font-bold">✓</span>
-                  <span>Atur radius pengiriman sesuai kemampuan Anda</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-green-600 font-bold">✓</span>
-                  <span>Gratis tanpa biaya berlangganan bulanan</span>
-                </li>
-              </ul>
-            </div>
-
-            {/* Form */}
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="shop-name" className="font-semibold">
-                  Nama Toko <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="shop-name"
-                  value={shopName}
-                  onChange={(e) => setShopName(e.target.value)}
-                  placeholder="Contoh: Taman Hijau Nursery"
-                  className="mt-2"
-                />
-                <p className="text-xs text-gray-500 mt-1">Nama toko yang akan ditampilkan kepada pembeli</p>
-              </div>
-
-              <div>
-                <Label htmlFor="shop-description" className="font-semibold">
-                  Deskripsi Toko <span className="text-red-500">*</span>
-                </Label>
-                <Textarea
-                  id="shop-description"
-                  value={shopDescription}
-                  onChange={(e) => setShopDescription(e.target.value)}
-                  placeholder="Ceritakan tentang toko Anda, produk yang dijual, dan keunggulan toko..."
-                  rows={4}
-                  className="mt-2"
-                />
-                <p className="text-xs text-gray-500 mt-1">Minimal 50 karakter</p>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="shop-city" className="font-semibold">
-                    Kota <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="shop-city"
-                    value={shopCity}
-                    onChange={(e) => setShopCity(e.target.value)}
-                    placeholder="Jakarta"
-                    className="mt-2"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="shop-phone" className="font-semibold">
-                    No. Telepon Toko
-                  </Label>
-                  <Input
-                    id="shop-phone"
-                    type="tel"
-                    placeholder="08xx xxxx xxxx"
-                    className="mt-2"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <Label htmlFor="shop-address" className="font-semibold">
-                  Alamat Toko <span className="text-red-500">*</span>
-                </Label>
-                <Textarea
-                  id="shop-address"
-                  value={shopAddress}
-                  onChange={(e) => setShopAddress(e.target.value)}
-                  placeholder="Masukkan alamat lengkap toko Anda"
-                  rows={3}
-                  className="mt-2"
-                />
-              </div>
-            </div>
-
-            {/* KYC Section */}
-            <Separator />
-            <div className="space-y-4">
-              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-5">
-                <div className="flex items-center gap-2 mb-3">
-                  <Shield className="w-5 h-5 text-yellow-700" />
-                  <h4 className="font-bold text-yellow-900">Verifikasi Identitas (KYC)</h4>
-                </div>
-                <p className="text-sm text-yellow-800 mb-3">
-                  Data ini diperlukan untuk verifikasi dan perlindungan transaksi. Data Anda aman dan terenkripsi.
-                </p>
-              </div>
-
-              {/* Phone */}
-              <div>
-                <Label htmlFor="kyc-phone" className="font-semibold flex items-center gap-2">
-                  <Phone className="w-4 h-4" />
-                  No. Telepon (WhatsApp) <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="kyc-phone"
-                  type="tel"
-                  value={kycPhone}
-                  onChange={(e) => setKycPhone(e.target.value)}
-                  placeholder="08xx xxxx xxxx"
-                  className="mt-2"
-                  maxLength={13}
-                />
-                <p className="text-xs text-gray-500 mt-1">Nomor aktif untuk komunikasi dengan pembeli</p>
-              </div>
-
-              {/* KTP Number */}
-              <div>
-                <Label htmlFor="kyc-ktp" className="font-semibold flex items-center gap-2">
-                  <IdCard className="w-4 h-4" />
-                  Nomor KTP <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="kyc-ktp"
-                  type="text"
-                  value={kycKtpNumber}
-                  onChange={(e) => {
-                    const value = e.target.value.replace(/\D/g, '');
-                    if (value.length <= 16) setKycKtpNumber(value);
-                  }}
-                  placeholder="16 digit nomor KTP"
-                  className="mt-2"
-                  maxLength={16}
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  {kycKtpNumber.length}/16 digit
-                </p>
-              </div>
-
-              {/* KTP Photo */}
-              <div>
-                <Label htmlFor="kyc-ktp-photo" className="font-semibold flex items-center gap-2">
-                  <Upload className="w-4 h-4" />
-                  Foto KTP <span className="text-red-500">*</span>
-                </Label>
-                <div className="mt-2">
-                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-green-500 transition-colors">
-                    <input
-                      id="kyc-ktp-photo"
-                      type="file"
-                      accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          if (file.size > 5 * 1024 * 1024) {
-                            toast.error('Ukuran file maksimal 5MB');
-                            return;
-                          }
-                          setKycKtpPhoto(file);
-                          toast.success('Foto KTP berhasil diunggah');
-                        }
-                      }}
-                      className="hidden"
-                    />
-                    <label htmlFor="kyc-ktp-photo" className="cursor-pointer">
-                      {kycKtpPhoto ? (
-                        <div className="flex items-center justify-center gap-2 text-green-600">
-                          <CheckCircle2 className="w-5 h-5" />
-                          <span className="font-semibold">{kycKtpPhoto.name}</span>
-                        </div>
-                      ) : (
-                        <div>
-                          <Upload className="w-10 h-10 text-gray-400 mx-auto mb-2" />
-                          <p className="font-semibold text-gray-700">Klik untuk upload foto KTP</p>
-                          <p className="text-xs text-gray-500 mt-1">Maksimal 5MB (JPG, PNG)</p>
-                        </div>
-                      )}
-                    </label>
-                  </div>
-                </div>
-                <p className="text-xs text-gray-500 mt-1">Pastikan foto jelas dan dapat dibaca</p>
-              </div>
-
-              {/* Bank Name */}
-              <div>
-                <Label htmlFor="kyc-bank" className="font-semibold flex items-center gap-2">
-                  <Building2 className="w-4 h-4" />
-                  Nama Bank <span className="text-red-500">*</span>
-                </Label>
-                <Input
-                  id="kyc-bank"
-                  value={kycBankName}
-                  onChange={(e) => setKycBankName(e.target.value)}
-                  placeholder="Contoh: BCA, Mandiri, BNI"
-                  className="mt-2"
-                />
-              </div>
-
-              {/* Account Number & Name */}
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="kyc-account-number" className="font-semibold flex items-center gap-2">
-                    <CreditCard className="w-4 h-4" />
-                    No. Rekening <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="kyc-account-number"
-                    type="text"
-                    value={kycAccountNumber}
-                    onChange={(e) => setKycAccountNumber(e.target.value)}
-                    placeholder="Nomor rekening"
-                    className="mt-2"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="kyc-account-name" className="font-semibold">
-                    Nama Pemilik Rekening <span className="text-red-500">*</span>
-                  </Label>
-                  <Input
-                    id="kyc-account-name"
-                    value={kycAccountName}
-                    onChange={(e) => setKycAccountName(e.target.value)}
-                    placeholder="Sesuai KTP"
-                    className="mt-2"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Harus sama dengan nama di KTP</p>
-                </div>
-              </div>
-
-              <Alert className="bg-green-50 border-green-200">
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
-                <AlertDescription className="text-sm text-green-800">
-                  <strong>Keamanan Data:</strong> Semua data pribadi Anda dienkripsi dan hanya digunakan untuk verifikasi akun penjual.
-                </AlertDescription>
-              </Alert>
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2">
-            <Button
-              onClick={() => setShowSellerDialog(false)}
-              variant="outline"
-            >
-              Batal
-            </Button>
-            <Button
-              onClick={handleApplySeller}
-              className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800"
-            >
-              <Store className="w-4 h-4 mr-2" />
-              Ajukan Sekarang
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

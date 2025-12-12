@@ -29,9 +29,23 @@ interface SellerRegistrationPageProps {
 export interface SellerRegistrationData {
   shopName: string;
   shopDescription: string;
+  shopAddress: string;
+  shopCity: string;
   address: string;
   city: string;
   phone: string;
+  identityType?: string;
+  identityNumber?: string;
+  identityPhoto?: string;
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountName?: string;
+  // KYC fields with kyc prefix
+  kycKtpNumber?: string;
+  kycKtpPhoto?: string;
+  kycBankName?: string;
+  kycAccountNumber?: string;
+  kycAccountName?: string;
 }
 
 export function SellerRegistrationPage({ onSubmit, onBack }: SellerRegistrationPageProps) {
@@ -127,9 +141,23 @@ export function SellerRegistrationPage({ onSubmit, onBack }: SellerRegistrationP
       onSubmit({
         shopName,
         shopDescription,
+        shopAddress,
+        shopCity,
         address: shopAddress,
         city: shopCity,
         phone: kycPhone,
+        identityType: 'KTP',
+        identityNumber: kycKtpNumber,
+        identityPhoto: kycKtpPhoto ? URL.createObjectURL(kycKtpPhoto) : '',
+        bankName: kycBankName,
+        bankAccountNumber: kycAccountNumber,
+        bankAccountName: kycAccountName,
+        // KYC fields with kyc prefix for compatibility
+        kycKtpNumber,
+        kycKtpPhoto: kycKtpPhoto ? URL.createObjectURL(kycKtpPhoto) : '',
+        kycBankName,
+        kycAccountNumber,
+        kycAccountName,
       });
     }
   };
