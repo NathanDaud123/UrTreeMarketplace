@@ -194,12 +194,22 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
                        registerError.message?.includes('NetworkError') ||
                        getError.message?.includes('Tidak dapat terhubung') ||
                        getError.message?.includes('NetworkError')) {
-              // Network error - use local data so user can still use the app
-              console.warn('Network error during registration, using local user data');
+              // Actual network error (no response from server)
+              console.error('❌ Network error during registration - data NOT saved to database!');
+              console.error('Error details:', { registerError, getError });
+              toast.error('⚠️ Tidak dapat terhubung ke server. Pastikan edge function sudah di-deploy.', {
+                duration: 10000,
+                description: 'Deploy dengan: supabase functions deploy make-server-0eb859c3'
+              });
               dbUser = newUser;
             } else {
-              // Other error - log but use local data as fallback
-              console.error('Registration error, using local data as fallback:', registerError);
+              // Other error - show actual error message
+              console.error('Registration error:', registerError);
+              const errorMsg = registerError.message || 'Gagal menyimpan data user';
+              toast.error(`⚠️ ${errorMsg}`, {
+                duration: 8000,
+                description: 'Coba lagi atau hubungi support'
+              });
               dbUser = newUser;
             }
           }
@@ -270,23 +280,31 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
         }
         
         // Show success message even with fallback (user can still use the app)
-        toast.success('✅ Login dengan Google berhasil!', {
-          description: 'Menggunakan data sementara. Beberapa fitur mungkin terbatas.'
+        toast.warning('⚠️ Login berhasil, tapi data tidak tersimpan ke database!', {
+          duration: 10000,
+          description: 'Edge function belum di-deploy. Deploy sekarang untuk menyimpan data user.'
         });
       } else {
         // Only show error if we can't even create fallback user
         let errorMessage = 'Gagal menyinkronkan data user';
         
-        if (error.message?.includes('Tidak dapat terhubung') || 
-            error.message?.includes('NetworkError')) {
+        // Only show "edge not deployed" for actual network failures (no response)
+        if ((error.message?.includes('Tidak dapat terhubung') || 
+             error.message?.includes('NetworkError')) &&
+            !(error as any).status) { // Only if no status code (actual network failure)
           errorMessage = 'Tidak dapat terhubung ke server. Pastikan edge function sudah di-deploy di Supabase.';
+          toast.error('❌ Data user TIDAK tersimpan ke database!', {
+            duration: 12000,
+            description: 'Edge function belum di-deploy. Jalankan: supabase functions deploy make-server-0eb859c3'
+          });
         } else {
-          errorMessage += ': ' + (error.message || 'Unknown error');
+          // Show actual error message for other errors
+          errorMessage = error.message || 'Gagal menyinkronkan data user';
+          toast.error(`❌ ${errorMessage}`, {
+            duration: 8000,
+            description: 'Cek console untuk detail error'
+          });
         }
-        
-        toast.error(errorMessage, {
-          duration: 8000
-        });
       }
     }
   };

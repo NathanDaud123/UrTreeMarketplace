@@ -25,7 +25,8 @@ async function apiRequest(
   }
 
   try {
-    console.log(`API Request: ${method} ${endpoint}`, body ? { bodySize: JSON.stringify(body).length } : '');
+    console.log(`API Request: ${method} ${endpoint}`, body ? { body: body, bodySize: JSON.stringify(body).length } : '');
+    console.log(`API URL: ${API_BASE_URL}${endpoint}`);
     
     const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
     
@@ -34,28 +35,40 @@ async function apiRequest(
     if (!response.ok) {
       let errorData;
       try {
-        errorData = await response.json();
+        const text = await response.text();
+        console.error(`API Error Response Text:`, text);
+        errorData = JSON.parse(text);
       } catch (e) {
         errorData = { error: `HTTP ${response.status}: ${response.statusText}` };
       }
       
       console.error(`API Error Response:`, errorData);
-      throw new Error(errorData.error || `API request failed with status ${response.status}`);
+      
+      // Create error with more context
+      const error = new Error(errorData.error || `API request failed with status ${response.status}`);
+      (error as any).status = response.status;
+      (error as any).statusText = response.statusText;
+      (error as any).responseData = errorData;
+      throw error;
     }
 
     const responseData = await response.json();
-    console.log(`API Success: ${method} ${endpoint}`);
+    console.log(`API Success: ${method} ${endpoint}`, responseData);
     return responseData;
   } catch (error: any) {
     console.error(`API Error (${method} ${endpoint}):`, {
       message: error.message,
-      error: error
+      error: error,
+      stack: error.stack
     });
     
-    // Better error messages for network errors
-    if (error.message?.includes('Failed to fetch') || 
-        error.message?.includes('NetworkError') ||
-        error.name === 'TypeError') {
+    // Better error messages for network errors (only for actual network failures)
+    // Don't show "edge not deployed" if we got a response (even if it's an error)
+    if ((error.message?.includes('Failed to fetch') || 
+         error.message?.includes('NetworkError') ||
+         error.name === 'TypeError' ||
+         error.message?.includes('Network request failed')) &&
+        !error.status) { // Only if we didn't get a response status (actual network failure)
       throw new Error(`Tidak dapat terhubung ke server. Pastikan edge function sudah di-deploy di Supabase.`);
     }
     

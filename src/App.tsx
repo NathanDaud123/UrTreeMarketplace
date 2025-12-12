@@ -379,13 +379,20 @@ function AppContent() {
             onUpdateUser={async (updatedUser) => {
               try {
                 // Extract updates (exclude email as it shouldn't be changed)
-                const { email, ...updates } = updatedUser;
+                const { email, password, createdAt, role, isPendingSeller, hasSellerAccount, ...updates } = updatedUser;
+                console.log('App.tsx - onUpdateUser called with:', { updatedUser, updates });
                 await db.updateUser(updates);
                 toast.success('Profil berhasil diperbarui');
               } catch (error: any) {
-                console.error('Update user error:', error);
+                console.error('Update user error in App.tsx:', error);
+                console.error('Error details:', {
+                  message: error.message,
+                  stack: error.stack,
+                  updatedUser
+                });
                 const errorMessage = error.message || 'Gagal memperbarui profil';
                 toast.error(errorMessage);
+                throw error; // Re-throw agar profile-page bisa handle
               }
             }}
             onApplyAsSeller={handleApplyAsSeller}

@@ -1,7 +1,19 @@
 import { Hono } from "npm:hono";
 import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
-import * as kv from "./kv_store.tsx";
+import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
+
+// Initialize Supabase client for database operations
+const getSupabaseClient = () => {
+  const supabaseUrl = Deno.env.get("SUPABASE_URL");
+  const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  
+  if (!supabaseUrl || !supabaseServiceKey) {
+    throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY environment variables");
+  }
+  
+  return createClient(supabaseUrl, supabaseServiceKey);
+};
 
 const app = new Hono();
 
@@ -31,9 +43,15 @@ app.get("/make-server-0eb859c3/health", (c) => {
 app.post("/make-server-0eb859c3/users/register", async (c) => {
   try {
     const { email, password, name } = await c.req.json();
+    const supabase = getSupabaseClient();
     
     // Check if user already exists
-    const existingUser = await kv.get(`user:${email}`);
+    const { data: existingUser } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", email)
+      .maybeSingle();
+    
     if (existingUser) {
       return c.json({ error: "User already exists" }, 400);
     }
@@ -42,24 +60,36 @@ app.post("/make-server-0eb859c3/users/register", async (c) => {
     const adminEmails = ['admin@urtree.com', 'admin@admin.com'];
     const isAdmin = adminEmails.includes(email.toLowerCase());
 
-    const user = {
-      email,
-      name,
-      password, // In production, hash this!
-      role: isAdmin ? 'admin' : 'buyer',
-      isPendingSeller: false,
-      hasSellerAccount: false,
-      createdAt: new Date().toISOString(),
-    };
+    // Hash password (simple hash for now, in production use bcrypt)
+    // For now, we'll store it as-is but mark it for hashing later
+    const password_hash = password; // TODO: Hash with bcrypt in production
 
-    await kv.set(`user:${email}`, user);
+    // Insert new user
+    const { data: newUser, error: insertError } = await supabase
+      .from("users")
+      .insert({
+        email,
+        name,
+        password_hash,
+        role: isAdmin ? 'admin' : 'buyer',
+        login_method: 'email',
+        is_email_verified: false,
+        is_active: true
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      console.log("Error inserting user:", insertError);
+      return c.json({ error: "Failed to register user: " + insertError.message }, 500);
+    }
     
-    // Remove password from response
-    const { password: _, ...userWithoutPassword } = user;
+    // Remove password_hash from response
+    const { password_hash: _, ...userWithoutPassword } = newUser;
     return c.json({ user: userWithoutPassword }, 201);
-  } catch (error) {
+  } catch (error: any) {
     console.log("Error registering user:", error);
-    return c.json({ error: "Failed to register user" }, 500);
+    return c.json({ error: "Failed to register user: " + (error.message || "Unknown error") }, 500);
   }
 });
 
@@ -67,18 +97,36 @@ app.post("/make-server-0eb859c3/users/register", async (c) => {
 app.post("/make-server-0eb859c3/users/login", async (c) => {
   try {
     const { email, password } = await c.req.json();
+    const supabase = getSupabaseClient();
     
-    const user = await kv.get(`user:${email}`);
-    if (!user || user.password !== password) {
+    // Get user from database
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", email)
+      .maybeSingle();
+    
+    if (error || !user) {
       return c.json({ error: "Invalid credentials" }, 401);
     }
 
-    // Remove password from response
-    const { password: _, ...userWithoutPassword } = user;
+    // Check password (simple comparison for now, in production use bcrypt)
+    if (user.password_hash !== password) {
+      return c.json({ error: "Invalid credentials" }, 401);
+    }
+
+    // Update last_login_at
+    await supabase
+      .from("users")
+      .update({ last_login_at: new Date().toISOString() })
+      .eq("email", email);
+
+    // Remove password_hash from response
+    const { password_hash: _, ...userWithoutPassword } = user;
     return c.json({ user: userWithoutPassword });
-  } catch (error) {
+  } catch (error: any) {
     console.log("Error logging in:", error);
-    return c.json({ error: "Failed to login" }, 500);
+    return c.json({ error: "Failed to login: " + (error.message || "Unknown error") }, 500);
   }
 });
 
@@ -102,39 +150,68 @@ app.post("/make-server-0eb859c3/users/google-login", async (c) => {
     
     // Use first mock user (or you can make this random)
     const googleUserInfo = mockGoogleUsers[0];
+    const supabase = getSupabaseClient();
     
     // Check if user already exists in database
-    let user = await kv.get(`user:${googleUserInfo.email}`);
+    const { data: existingUser } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", googleUserInfo.email)
+      .maybeSingle();
     
-    if (!user) {
+    let user;
+    if (!existingUser) {
       // Create new user from Google data
       const adminEmails = ['admin@urtree.com', 'admin@admin.com'];
       const isAdmin = adminEmails.includes(googleUserInfo.email.toLowerCase());
       
-      user = {
-        email: googleUserInfo.email,
-        name: googleUserInfo.name,
-        password: 'google-oauth-' + Date.now(), // Auto-generated, user won't use this
-        role: isAdmin ? 'admin' : 'buyer',
-        isPendingSeller: false,
-        hasSellerAccount: false,
-        createdAt: new Date().toISOString(),
-        googleId: googleUserInfo.googleId,
-        avatar: googleUserInfo.picture,
-        loginMethod: 'google'
-      };
+      // Insert new user
+      const { data: newUser, error: insertError } = await supabase
+        .from("users")
+        .insert({
+          email: googleUserInfo.email,
+          name: googleUserInfo.name,
+          password_hash: 'google-oauth-' + Date.now(), // Auto-generated, user won't use this
+          role: isAdmin ? 'admin' : 'buyer',
+          google_id: googleUserInfo.googleId,
+          avatar_url: googleUserInfo.picture,
+          login_method: 'google',
+          is_email_verified: true, // Google users are verified
+          is_active: true
+        })
+        .select()
+        .single();
       
-      await kv.set(`user:${googleUserInfo.email}`, user);
+      if (insertError) {
+        console.log("Error creating Google user:", insertError);
+        return c.json({ error: "Failed to create user: " + insertError.message }, 500);
+      }
+      
+      user = newUser;
       console.log(`New Google user created: ${googleUserInfo.email}`);
     } else {
       // Update last login for existing user
-      user.lastLogin = new Date().toISOString();
-      await kv.set(`user:${googleUserInfo.email}`, user);
+      const { data: updatedUser, error: updateError } = await supabase
+        .from("users")
+        .update({ 
+          last_login_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq("email", googleUserInfo.email)
+        .select()
+        .single();
+      
+      if (updateError) {
+        console.log("Error updating Google user:", updateError);
+        user = existingUser; // Use existing user data
+      } else {
+        user = updatedUser;
+      }
       console.log(`Existing Google user logged in: ${googleUserInfo.email}`);
     }
     
-    // Remove password from response
-    const { password: _, ...userWithoutPassword } = user;
+    // Remove password_hash from response
+    const { password_hash: _, ...userWithoutPassword } = user;
     return c.json({ 
       user: userWithoutPassword,
       message: 'Demo: Google Sign-In successful! (Using mock implementation)'
@@ -155,29 +232,44 @@ app.post("/make-server-0eb859c3/users/google-login", async (c) => {
     }
     
     // Check if user exists
-    let user = await kv.get(`user:${googleUser.email}`);
+    const supabase = getSupabaseClient();
+    const { data: existingUser } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", googleUser.email)
+      .maybeSingle();
     
-    if (!user) {
+    let user;
+    if (!existingUser) {
       // Create new user from Google data
       const adminEmails = ['admin@urtree.com'];
       const isAdmin = adminEmails.includes(googleUser.email.toLowerCase());
       
-      user = {
-        email: googleUser.email,
-        name: googleUser.name,
-        role: isAdmin ? 'admin' : 'buyer',
-        isPendingSeller: false,
-        hasSellerAccount: false,
-        createdAt: new Date().toISOString(),
-        googleId: googleUser.sub,
-        avatar: googleUser.picture,
-        loginMethod: 'google'
-      };
+      const { data: newUser, error: insertError } = await supabase
+        .from("users")
+        .insert({
+          email: googleUser.email,
+          name: googleUser.name,
+          password_hash: 'google-oauth-' + Date.now(),
+          role: isAdmin ? 'admin' : 'buyer',
+          google_id: googleUser.sub,
+          avatar_url: googleUser.picture,
+          login_method: 'google',
+          is_email_verified: true,
+          is_active: true
+        })
+        .select()
+        .single();
       
-      await kv.set(`user:${googleUser.email}`, user);
+      if (insertError) {
+        return c.json({ error: "Failed to create user: " + insertError.message }, 500);
+      }
+      user = newUser;
+    } else {
+      user = existingUser;
     }
     
-    const { password: _, ...userWithoutPassword } = user;
+    const { password_hash: _, ...userWithoutPassword } = user;
     return c.json({ user: userWithoutPassword });
     */
   } catch (error) {
@@ -189,40 +281,170 @@ app.post("/make-server-0eb859c3/users/google-login", async (c) => {
 // Get user by email
 app.get("/make-server-0eb859c3/users/:email", async (c) => {
   try {
-    const email = c.req.param("email");
-    const user = await kv.get(`user:${email}`);
+    const email = decodeURIComponent(c.req.param("email"));
+    const supabase = getSupabaseClient();
     
-    if (!user) {
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", email)
+      .maybeSingle();
+    
+    if (error || !user) {
       return c.json({ error: "User not found" }, 404);
     }
-
-    const { password: _, ...userWithoutPassword } = user;
+    
+    // Get default address if exists
+    const { data: defaultAddress } = await supabase
+      .from("user_addresses")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("is_default", true)
+      .maybeSingle();
+    
+    // Add address data to response if exists
+    let responseUser: any = { ...user };
+    if (defaultAddress) {
+      responseUser.address = defaultAddress.address;
+      responseUser.city = defaultAddress.city;
+    }
+    
+    // Remove password_hash from response
+    const { password_hash: _, ...userWithoutPassword } = responseUser;
     return c.json({ user: userWithoutPassword });
-  } catch (error) {
+  } catch (error: any) {
     console.log("Error fetching user:", error);
-    return c.json({ error: "Failed to fetch user" }, 500);
+    return c.json({ error: "Failed to fetch user: " + (error.message || "Unknown error") }, 500);
   }
 });
 
 // Update user profile
 app.put("/make-server-0eb859c3/users/:email", async (c) => {
   try {
-    const email = c.req.param("email");
+    const email = decodeURIComponent(c.req.param("email"));
     const updates = await c.req.json();
+    const supabase = getSupabaseClient();
     
-    const user = await kv.get(`user:${email}`);
-    if (!user) {
+    console.log(`Updating user: ${email}`, { updates });
+    
+    // Check if user exists
+    const { data: existingUser } = await supabase
+      .from("users")
+      .select("*")
+      .eq("email", email)
+      .maybeSingle();
+    
+    if (!existingUser) {
+      console.log(`User not found: ${email}`);
       return c.json({ error: "User not found" }, 404);
     }
 
-    const updatedUser = { ...user, ...updates, email }; // Keep email unchanged
-    await kv.set(`user:${email}`, updatedUser);
+    console.log(`User found, updating...`, { existingUser: { email: existingUser.email, name: existingUser.name } });
     
-    const { password: _, ...userWithoutPassword } = updatedUser;
+    // Map updates to database schema
+    const dbUpdates: any = {
+      updated_at: new Date().toISOString()
+    };
+    
+    // Map common fields
+    if (updates.name !== undefined) dbUpdates.name = updates.name;
+    if (updates.phone !== undefined) dbUpdates.phone = updates.phone;
+    if (updates.avatar !== undefined || updates.avatar_url !== undefined) {
+      dbUpdates.avatar_url = updates.avatar || updates.avatar_url;
+    }
+    if (updates.googleId !== undefined) dbUpdates.google_id = updates.googleId;
+    if (updates.loginMethod !== undefined) dbUpdates.login_method = updates.loginMethod;
+    if (updates.role !== undefined) dbUpdates.role = updates.role;
+    
+    // Update user in database
+    const { data: updatedUser, error: updateError } = await supabase
+      .from("users")
+      .update(dbUpdates)
+      .eq("email", email)
+      .select()
+      .single();
+    
+    if (updateError) {
+      console.log("Error updating user:", updateError);
+      return c.json({ error: "Failed to update user: " + updateError.message }, 500);
+    }
+    
+    // Handle address and city - save to user_addresses table
+    if (updates.address !== undefined || updates.city !== undefined) {
+      const userId = updatedUser.id;
+      
+      // Check if default address already exists
+      const { data: existingAddress } = await supabase
+        .from("user_addresses")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("is_default", true)
+        .maybeSingle();
+      
+      const addressData: any = {
+        user_id: userId,
+        label: 'Alamat Utama',
+        recipient_name: updatedUser.name,
+        phone: updatedUser.phone || '',
+        address: updates.address !== undefined ? updates.address : (existingAddress?.address || ''),
+        city: updates.city !== undefined ? updates.city : (existingAddress?.city || ''),
+        is_default: true,
+        updated_at: new Date().toISOString()
+      };
+      
+      if (existingAddress) {
+        // Update existing default address
+        const { error: addressError } = await supabase
+          .from("user_addresses")
+          .update(addressData)
+          .eq("id", existingAddress.id);
+        
+        if (addressError) {
+          console.log("Error updating address:", addressError);
+          // Don't fail the whole request if address update fails
+        } else {
+          console.log(`Address updated for user: ${email}`);
+        }
+      } else {
+        // Create new default address
+        addressData.created_at = new Date().toISOString();
+        const { error: addressError } = await supabase
+          .from("user_addresses")
+          .insert(addressData);
+        
+        if (addressError) {
+          console.log("Error creating address:", addressError);
+          // Don't fail the whole request if address creation fails
+        } else {
+          console.log(`Address created for user: ${email}`);
+        }
+      }
+    }
+    
+    console.log(`User updated successfully: ${email}`);
+    
+    // Get default address for response
+    const { data: defaultAddress } = await supabase
+      .from("user_addresses")
+      .select("*")
+      .eq("user_id", updatedUser.id)
+      .eq("is_default", true)
+      .maybeSingle();
+    
+    // Add address data to response if exists
+    let responseUser: any = { ...updatedUser };
+    if (defaultAddress) {
+      responseUser.address = defaultAddress.address;
+      responseUser.city = defaultAddress.city;
+    }
+    
+    // Remove password_hash from response
+    const { password_hash: _, ...userWithoutPassword } = responseUser;
     return c.json({ user: userWithoutPassword });
-  } catch (error) {
+  } catch (error: any) {
     console.log("Error updating user:", error);
-    return c.json({ error: "Failed to update user" }, 500);
+    console.log("Error details:", { message: error.message, stack: error.stack });
+    return c.json({ error: "Failed to update user: " + (error.message || "Unknown error") }, 500);
   }
 });
 

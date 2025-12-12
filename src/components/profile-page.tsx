@@ -84,11 +84,13 @@ export function ProfilePage({ user, onUpdateUser, onApplyAsSeller }: ProfilePage
         city,
       });
       
+      // Only close edit mode if update was successful
       setIsEditing(false);
       // Toast success akan muncul dari App.tsx setelah update berhasil
-    } catch (error) {
+    } catch (error: any) {
       // Error handling sudah dilakukan di App.tsx
       // Jangan tutup edit mode jika error
+      console.error('Profile save error in profile-page:', error);
     }
   };
 
