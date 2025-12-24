@@ -43,15 +43,17 @@ export interface SellerTransaction {
   trackingNumber?: string;
   estimatedDelivery?: string;
   paymentMethod: string;
+  paymentProofUrl?: string;
 }
 
 interface TransactionHistorySellerProps {
   transactions: SellerTransaction[];
   onViewDetail: (transaction: SellerTransaction) => void;
   onOpenChat: (buyerName: string, orderId: string) => void;
+  onUpdateStatus?: (orderId: string, status: string, trackingNumber?: string) => Promise<void>;
 }
 
-export function TransactionHistorySeller({ transactions, onViewDetail, onOpenChat }: TransactionHistorySellerProps) {
+export function TransactionHistorySeller({ transactions, onViewDetail, onOpenChat, onUpdateStatus }: TransactionHistorySellerProps) {
   const [activeTab, setActiveTab] = useState<string>('all');
   const [updateDialog, setUpdateDialog] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<SellerTransaction | null>(null);
@@ -87,10 +89,36 @@ export function TransactionHistorySeller({ transactions, onViewDetail, onOpenCha
     setUpdateDialog(true);
   };
 
-  const submitStatusUpdate = () => {
-    toast.success('✅ Status pesanan berhasil diperbarui!');
-    setUpdateDialog(false);
-    setTrackingNumber('');
+  const submitStatusUpdate = async () => {
+    if (!selectedTransaction || !onUpdateStatus) {
+      toast.error('Update status tidak tersedia');
+      return;
+    }
+    
+    // Validate tracking number for shipped status
+    if (newStatus === 'shipped' && !trackingNumber.trim()) {
+      toast.error('Nomor resi wajib diisi untuk status Dikirim');
+      return;
+    }
+    
+    try {
+      // Map frontend status to database status
+      let dbStatus = newStatus;
+      if (newStatus === 'pending') dbStatus = 'pending';
+      else if (newStatus === 'processing') dbStatus = 'processing';
+      else if (newStatus === 'shipped') dbStatus = 'in_delivery';
+      else if (newStatus === 'completed') dbStatus = 'completed';
+      else if (newStatus === 'cancelled') dbStatus = 'cancelled';
+      
+      await onUpdateStatus(selectedTransaction.id, dbStatus, trackingNumber.trim() || undefined);
+      toast.success('✅ Status pesanan berhasil diperbarui!');
+      setUpdateDialog(false);
+      setTrackingNumber('');
+      setNewStatus('pending');
+    } catch (error: any) {
+      console.error('Error updating status:', error);
+      toast.error(error?.message || 'Gagal memperbarui status pesanan');
+    }
   };
 
   const handleViewDetails = (transaction: SellerTransaction) => {

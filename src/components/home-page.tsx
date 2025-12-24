@@ -1,8 +1,9 @@
+import { useState, useEffect } from 'react';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Leaf, Sprout, Hammer, AlertCircle } from 'lucide-react';
 import type { Product, ProductCategory, User } from '../App';
-import { MOCK_PRODUCTS } from '../lib/mock-data';
+import { productAPI } from '../utils/api';
 import { Alert, AlertDescription } from './ui/alert';
 import mockupImage from 'figma:asset/9b819861dd521d9e484552f654e9563e6da9f78f.png';
 
@@ -15,6 +16,39 @@ interface HomePageProps {
 }
 
 export function HomePage({ onCategorySelect, onProductSelect, currentUser, isProfileComplete, onCompleteProfile }: HomePageProps) {
+  const [featuredProducts, setFeaturedProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
+  const [productsError, setProductsError] = useState<string | null>(null);
+
+  // Fetch products from database
+  useEffect(() => {
+    const loadProducts = async () => {
+      setLoadingProducts(true);
+      setProductsError(null);
+      try {
+        const response = await productAPI.getAll();
+        if (response.products && Array.isArray(response.products)) {
+          // Sort by sold (descending) and take top 4
+          const sortedProducts = [...response.products]
+            .filter(product => product.stock > 0) // Only show products with stock
+            .sort((a, b) => (b.sold || 0) - (a.sold || 0))
+            .slice(0, 4);
+          setFeaturedProducts(sortedProducts);
+        } else {
+          setFeaturedProducts([]);
+        }
+      } catch (error: any) {
+        console.error('Error loading products:', error);
+        setProductsError('Gagal memuat produk terlaris');
+        setFeaturedProducts([]);
+      } finally {
+        setLoadingProducts(false);
+      }
+    };
+
+    loadProducts();
+  }, []);
+
   const categories = [
     {
       id: 'tanaman-hidup' as ProductCategory,
@@ -47,11 +81,6 @@ export function HomePage({ onCategorySelect, onProductSelect, currentUser, isPro
       image: 'https://images.unsplash.com/photo-1523301551780-cd17359a95d0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxnYXJkZW5pbmclMjB0b29sc3xlbnwxfHx8fDE3NjE1NzQwODN8MA&ixlib=rb-4.1.0&q=80&w=1080',
     },
   ];
-
-  // Get featured products (top sold)
-  const featuredProducts = [...MOCK_PRODUCTS]
-    .sort((a, b) => b.sold - a.sold)
-    .slice(0, 4);
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
@@ -204,6 +233,22 @@ export function HomePage({ onCategorySelect, onProductSelect, currentUser, isPro
               Lihat Semua
             </Button>
           </div>
+          {loadingProducts ? (
+            <div className="text-center py-12 text-gray-500">
+              Memuat produk terlaris...
+            </div>
+          ) : productsError ? (
+            <Alert className="border-red-200 bg-red-50">
+              <AlertCircle className="h-4 w-4 text-red-600" />
+              <AlertDescription className="text-red-800">
+                {productsError}
+              </AlertDescription>
+            </Alert>
+          ) : featuredProducts.length === 0 ? (
+            <div className="text-center py-12 text-gray-500">
+              Belum ada produk terlaris
+            </div>
+          ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {featuredProducts.map((product) => (
               <Card
@@ -244,6 +289,7 @@ export function HomePage({ onCategorySelect, onProductSelect, currentUser, isPro
               </Card>
             ))}
           </div>
+          )}
         </section>
       </div>
     </div>

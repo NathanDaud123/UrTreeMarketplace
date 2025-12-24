@@ -30,7 +30,7 @@ import type { ProductCategory, Product } from '../App';
 import { useDatabaseContext } from '../utils/database-provider';
 
 export function SellerDashboard() {
-  const { sellerProducts, loadSellerProducts, createProduct, updateProduct, deleteProduct, isLoading } = useDatabaseContext();
+  const { sellerProducts, loadSellerProducts, createProduct, updateProduct, deleteProduct, isLoading, loadChatConversations } = useDatabaseContext();
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productName, setProductName] = useState('');
@@ -50,6 +50,8 @@ export function SellerDashboard() {
   // Load seller products on mount
   useEffect(() => {
     loadSellerProducts();
+    // Also load chat conversations for seller
+    loadChatConversations().catch(console.error);
   }, []);
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

@@ -46,8 +46,25 @@ export function LoginPage({ onSuccess, onBack }: LoginPageProps) {
       await login(loginEmail, loginPassword);
       toast.success('Login berhasil! Selamat datang di UrTree');
       onSuccess();
-    } catch (error) {
-      toast.error('Login gagal. Periksa email dan password Anda.');
+    } catch (error: any) {
+      console.error('Login error details:', error);
+      
+      // Provide more specific error messages
+      let errorMessage = 'Login gagal. Periksa email dan password Anda.';
+      
+      if (error.message?.includes('Tidak dapat terhubung ke server') || 
+          error.message?.includes('edge function')) {
+        errorMessage = 'Server tidak dapat diakses. Pastikan edge function sudah di-deploy di Supabase.';
+      } else if (error.message?.includes('Invalid credentials') || 
+                 error.status === 401) {
+        errorMessage = 'Email atau password salah. Periksa kembali kredensial Anda.';
+      } else if (error.message?.includes('Account is inactive')) {
+        errorMessage = 'Akun Anda tidak aktif. Hubungi admin untuk aktivasi.';
+      } else if (error.message) {
+        errorMessage = `Login gagal: ${error.message}`;
+      }
+      
+      toast.error(errorMessage, { duration: 5000 });
     }
   };
 

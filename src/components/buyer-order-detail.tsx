@@ -20,6 +20,8 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { toast } from 'sonner@2.0.3';
 import type { Transaction } from './transaction-history-buyer';
+import { reviewAPI } from '../utils/api';
+import { useDatabaseContext } from '../utils/database-provider';
 
 interface BuyerOrderDetailProps {
   transaction: Transaction;
@@ -28,9 +30,11 @@ interface BuyerOrderDetailProps {
 }
 
 export function BuyerOrderDetail({ transaction, onBack, onOpenChat }: BuyerOrderDetailProps) {
+  const { currentUser } = useDatabaseContext();
   const [reviewDialog, setReviewDialog] = useState(false);
   const [reviewText, setReviewText] = useState('');
   const [rating, setRating] = useState(5);
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   const getStatusBadge = (status: Transaction['status']) => {
     switch (status) {
@@ -69,11 +73,43 @@ export function BuyerOrderDetail({ transaction, onBack, onOpenChat }: BuyerOrder
     }
   };
 
-  const handleSubmitReview = () => {
-    toast.success('✅ Ulasan berhasil dikirim! Terima kasih atas feedback Anda.');
-    setReviewDialog(false);
-    setReviewText('');
-    setRating(5);
+  const handleSubmitReview = async () => {
+    if (!currentUser || !currentUser.id) {
+      toast.error('Anda harus login untuk memberikan ulasan');
+      return;
+    }
+    
+    if (!reviewText.trim()) {
+      toast.error('Mohon isi ulasan Anda');
+      return;
+    }
+    
+    if (!transaction.items[0]?.productId) {
+      toast.error('Produk tidak ditemukan');
+      return;
+    }
+    
+    setIsSubmittingReview(true);
+    try {
+      await reviewAPI.create({
+        productId: transaction.items[0].productId,
+        orderId: transaction.id,
+        userId: currentUser.id,
+        rating: rating,
+        reviewText: reviewText.trim(),
+        title: null
+      });
+      
+      toast.success('✅ Ulasan berhasil dikirim! Terima kasih atas feedback Anda.');
+      setReviewDialog(false);
+      setReviewText('');
+      setRating(5);
+    } catch (error: any) {
+      console.error('Error submitting review:', error);
+      toast.error('Gagal mengirim ulasan: ' + (error.message || 'Unknown error'));
+    } finally {
+      setIsSubmittingReview(false);
+    }
   };
 
   const handleTrackOrder = () => {
@@ -442,9 +478,10 @@ export function BuyerOrderDetail({ transaction, onBack, onOpenChat }: BuyerOrder
             <div className="flex gap-2">
               <Button
                 onClick={handleSubmitReview}
+                disabled={isSubmittingReview}
                 className="flex-1 bg-green-600 hover:bg-green-700"
               >
-                Kirim Ulasan
+                {isSubmittingReview ? 'Mengirim...' : 'Kirim Ulasan'}
               </Button>
               <Button
                 onClick={() => setReviewDialog(false)}

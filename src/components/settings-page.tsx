@@ -8,10 +8,7 @@ import { Separator } from './ui/separator';
 import { Alert, AlertDescription } from './ui/alert';
 import {
   Shield,
-  Bell,
   Lock,
-  Mail,
-  Smartphone,
   Eye,
   EyeOff,
   Key,
@@ -42,9 +39,10 @@ interface SettingsPageProps {
   user: UserType;
   onUpdateUser: (user: UserType) => void;
   onSwitchRole?: (newRole: 'buyer' | 'seller') => void;
+  onNavigateToSellerRegistration?: () => void;
 }
 
-export function SettingsPage({ user, onUpdateUser, onSwitchRole }: SettingsPageProps) {
+export function SettingsPage({ user, onUpdateUser, onSwitchRole, onNavigateToSellerRegistration }: SettingsPageProps) {
   const { setPin, verifyPin, changePin } = useDatabaseContext();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -57,12 +55,6 @@ export function SettingsPage({ user, onUpdateUser, onSwitchRole }: SettingsPageP
   const [showPinSetupDialog, setShowPinSetupDialog] = useState(false);
   const [showPinVerifyDialog, setShowPinVerifyDialog] = useState(false);
   const [pinAction, setPinAction] = useState<'create' | 'change'>('create');
-
-  // Notification settings
-  const [emailNotif, setEmailNotif] = useState(true);
-  const [orderNotif, setOrderNotif] = useState(true);
-  const [promoNotif, setPromoNotif] = useState(true);
-  const [pushNotif, setPushNotif] = useState(false);
 
   // Privacy settings
   const [showProfile, setShowProfile] = useState(true);
@@ -110,8 +102,8 @@ export function SettingsPage({ user, onUpdateUser, onSwitchRole }: SettingsPageP
       await setPin(user.email, pin);
       toast.success('PIN berhasil dibuat!');
       
-      // Update user object
-      onUpdateUser({ ...user, hasPin: true });
+      // User object will be updated automatically by database-provider
+      // No need to call onUpdateUser here as the user is refreshed from database
     } catch (error) {
       throw error;
     }
@@ -328,66 +320,6 @@ export function SettingsPage({ user, onUpdateUser, onSwitchRole }: SettingsPageP
             </CardContent>
           </Card>
 
-          {/* Notification Settings */}
-          <Card className="shadow-lg border-0">
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <div className="w-10 h-10 bg-blue-50 rounded-lg flex items-center justify-center">
-                  <Bell className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <CardTitle className="font-bold">Notifikasi</CardTitle>
-                  <CardDescription>Atur preferensi notifikasi Anda</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <Mail className="w-5 h-5 text-gray-400" />
-                  <div>
-                    <p className="font-semibold">Email Notifikasi</p>
-                    <p className="text-sm text-gray-500">Terima update via email</p>
-                  </div>
-                </div>
-                <Switch checked={emailNotif} onCheckedChange={setEmailNotif} />
-              </div>
-
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <Bell className="w-5 h-5 text-gray-400" />
-                  <div>
-                    <p className="font-semibold">Notifikasi Pesanan</p>
-                    <p className="text-sm text-gray-500">Update status pesanan Anda</p>
-                  </div>
-                </div>
-                <Switch checked={orderNotif} onCheckedChange={setOrderNotif} />
-              </div>
-
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <CheckCircle2 className="w-5 h-5 text-gray-400" />
-                  <div>
-                    <p className="font-semibold">Promo & Penawaran</p>
-                    <p className="text-sm text-gray-500">Dapatkan info promo terbaru</p>
-                  </div>
-                </div>
-                <Switch checked={promoNotif} onCheckedChange={setPromoNotif} />
-              </div>
-
-              <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                <div className="flex items-center gap-3">
-                  <Smartphone className="w-5 h-5 text-gray-400" />
-                  <div>
-                    <p className="font-semibold">Push Notification</p>
-                    <p className="text-sm text-gray-500">Notifikasi langsung di perangkat</p>
-                  </div>
-                </div>
-                <Switch checked={pushNotif} onCheckedChange={setPushNotif} />
-              </div>
-            </CardContent>
-          </Card>
-
           {/* Privacy Settings */}
           <Card className="shadow-lg border-0">
             <CardHeader>
@@ -484,7 +416,57 @@ export function SettingsPage({ user, onUpdateUser, onSwitchRole }: SettingsPageP
           )}
 
           {/* Role Management - Only for buyers */}
-          {user.role === 'buyer' && onSwitchRole && (
+          {user.role === 'buyer' && (
+            <>
+              {/* If user has seller account, show switch to seller option */}
+              {user.hasSellerAccount && onSwitchRole && (
+                <Card className="shadow-lg border-0 border-green-200 bg-gradient-to-br from-green-50 to-white">
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                        <Store className="w-5 h-5 text-green-600" />
+                      </div>
+                      <div>
+                        <CardTitle className="font-bold text-green-900">Mode Pengguna</CardTitle>
+                        <CardDescription>Beralih antara mode penjual dan pembeli</CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="p-4 bg-white rounded-lg border-2 border-green-200">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start gap-3 flex-1">
+                          <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                            <Store className="w-6 h-6 text-green-600" />
+                          </div>
+                          <div>
+                            <p className="font-semibold text-green-900">Mode Penjual</p>
+                            <p className="text-sm text-green-700 mt-1">
+                              Kelola toko Anda, tambahkan produk, dan mulai berjualan.
+                            </p>
+                          </div>
+                        </div>
+                        <Button 
+                          onClick={() => onSwitchRole('seller')}
+                          className="bg-green-600 hover:bg-green-700 shrink-0"
+                        >
+                          Beralih ke Penjual
+                        </Button>
+                      </div>
+                    </div>
+
+                    <Alert className="bg-green-50 border-green-200">
+                      <AlertCircle className="h-4 w-4 text-green-600" />
+                      <AlertDescription className="text-sm text-green-800">
+                        <strong>Info:</strong> Anda dapat beralih kembali ke mode penjual kapan saja.
+                      </AlertDescription>
+                    </Alert>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* If user doesn't have seller account, show apply as seller option */}
+              {!user.hasSellerAccount && !user.isPendingSeller && (
             <Card className="shadow-lg border-0 border-orange-200 bg-gradient-to-br from-orange-50 to-white">
               <CardHeader>
                 <div className="flex items-center gap-2">
@@ -505,9 +487,9 @@ export function SettingsPage({ user, onUpdateUser, onSwitchRole }: SettingsPageP
                         <Store className="w-6 h-6 text-orange-600" />
                       </div>
                       <div>
-                        <p className="font-semibold text-orange-900">Mode Penjual</p>
+                        <p className="font-semibold text-orange-900">Ajukan Penjual</p>
                         <p className="text-sm text-orange-700 mt-1">
-                          Kelola toko Anda, tambahkan produk, dan mulai berjualan.
+                          Daftarkan diri Anda sebagai penjual untuk mulai menjual produk tanaman.
                         </p>
                         <ul className="text-xs text-orange-600 mt-2 space-y-1">
                           <li>• Kelola produk dan inventori</li>
@@ -517,10 +499,17 @@ export function SettingsPage({ user, onUpdateUser, onSwitchRole }: SettingsPageP
                       </div>
                     </div>
                     <Button 
-                      onClick={() => onSwitchRole('seller')}
+                          onClick={() => {
+                            if (onNavigateToSellerRegistration) {
+                              onNavigateToSellerRegistration();
+                            } else {
+                              // Fallback: try to navigate using window location
+                              window.location.href = '#seller-registration';
+                            }
+                          }}
                       className="bg-orange-600 hover:bg-orange-700 shrink-0"
                     >
-                      Mulai Berjualan
+                          Ajukan Penjual
                     </Button>
                   </div>
                 </div>
@@ -528,11 +517,38 @@ export function SettingsPage({ user, onUpdateUser, onSwitchRole }: SettingsPageP
                 <Alert className="bg-orange-50 border-orange-200">
                   <AlertCircle className="h-4 w-4 text-orange-600" />
                   <AlertDescription className="text-sm text-orange-800">
-                    <strong>Info:</strong> Anda tetap bisa berbelanja setelah menjadi penjual dengan beralih mode.
+                        <strong>Info:</strong> Anda perlu mengajukan sebagai penjual terlebih dahulu.
                   </AlertDescription>
                 </Alert>
               </CardContent>
             </Card>
+              )}
+
+              {/* If user has pending seller application */}
+              {user.isPendingSeller && (
+                <Card className="shadow-lg border-0 border-yellow-200 bg-gradient-to-br from-yellow-50 to-white">
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <div className="w-10 h-10 bg-yellow-100 rounded-lg flex items-center justify-center">
+                        <Store className="w-5 h-5 text-yellow-600" />
+                      </div>
+                      <div>
+                        <CardTitle className="font-bold text-yellow-900">Pengajuan Penjual</CardTitle>
+                        <CardDescription>Status pengajuan Anda sedang diproses</CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <Alert className="bg-yellow-50 border-yellow-200">
+                      <AlertCircle className="h-4 w-4 text-yellow-600" />
+                      <AlertDescription className="text-sm text-yellow-800">
+                        <strong>Menunggu Verifikasi:</strong> Pengajuan Anda sedang ditinjau oleh admin. Anda akan diberitahu setelah disetujui.
+                      </AlertDescription>
+                    </Alert>
+                  </CardContent>
+                </Card>
+              )}
+            </>
           )}
 
           {/* Danger Zone */}

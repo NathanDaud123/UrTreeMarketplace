@@ -18,7 +18,7 @@ interface DatabaseContextType {
   login: (email: string, password: string) => Promise<void>;
   loginWithGoogle: () => Promise<{ user: User; message?: string }>;
   register: (email: string, password: string, name: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
   applySeller: (sellerData: any) => Promise<void>;
   switchRole: (newRole: 'buyer' | 'seller') => Promise<void>;
@@ -49,7 +49,7 @@ interface DatabaseContextType {
   loadBuyerOrders: () => Promise<void>;
   loadSellerOrders: () => Promise<void>;
   createOrder: (orderData: any) => Promise<any>;
-  updateOrderStatus: (orderId: string, status: string) => Promise<void>;
+  updateOrderStatus: (orderId: string, status: string, trackingNumber?: string) => Promise<void>;
 
   // Chat
   chatConversations: ChatConversation[];
@@ -81,6 +81,58 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
 
+  // Load user from localStorage on mount (session persistence)
+  // SECURITY: Only restore session if user exists and is valid, and not logged out
+  useEffect(() => {
+    const loadUserSession = async () => {
+      try {
+        // SECURITY: Check if user has explicitly logged out
+        const logoutFlag = localStorage.getItem('urtree_logout_flag');
+        if (logoutFlag) {
+          console.log('⚠️ Logout flag detected, skipping session restore');
+          // Clear logout flag and email
+          localStorage.removeItem('urtree_logout_flag');
+          localStorage.removeItem('urtree_user_email');
+          return;
+        }
+        
+        const savedUserEmail = localStorage.getItem('urtree_user_email');
+        if (savedUserEmail) {
+          console.log('Loading user session from localStorage:', savedUserEmail);
+          const userResponse = await userAPI.getUser(savedUserEmail);
+          if (userResponse?.user) {
+            // SECURITY: Verify user is active before restoring session
+            if (!userResponse.user.is_active) {
+              console.warn('⚠️ User is inactive, clearing session');
+              localStorage.removeItem('urtree_user_email');
+              return;
+            }
+            
+            setCurrentUser(userResponse.user);
+            console.log('✅ User session restored:', userResponse.user.email, 'Role:', userResponse.user.role);
+            
+            // Load cart if user is buyer
+            if (userResponse.user.role === 'buyer') {
+              await loadCart(userResponse.user.email);
+            }
+          } else {
+            // User not found, clear session
+            console.warn('⚠️ User not found, clearing session');
+            localStorage.removeItem('urtree_user_email');
+          }
+        }
+      } catch (error) {
+        console.error('Error loading user session:', error);
+        // Clear invalid session
+        localStorage.removeItem('urtree_user_email');
+        localStorage.removeItem('urtree_logout_flag');
+      }
+    };
+    
+    loadUserSession();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Cart functions (defined early so it can be used in OAuth callback)
   const loadCart = async (userEmail?: string) => {
     const email = userEmail || currentUser?.email;
@@ -99,6 +151,8 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   const syncGoogleUserToDatabase = async (supabaseUser: any) => {
     try {
       const userEmail = supabaseUser.email;
+      
+      // IMPORTANT: Always use existing user if email matches (synchronize accounts)
       if (!userEmail) {
         console.error('No email in Supabase user');
         return;
@@ -127,7 +181,28 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
         }
       }
       
-      if (!dbUser) {
+      if (dbUser) {
+        // User already exists - UPDATE with Google info to sync accounts
+        console.log('✅ User exists, syncing Google info:', userEmail);
+        try {
+          await userAPI.updateUser(userEmail, {
+            googleId: supabaseUser.id,
+            avatar: supabaseUser.user_metadata?.avatar_url || supabaseUser.user_metadata?.picture,
+            loginMethod: 'google'
+          });
+          console.log('✅ Google info synced to existing user:', userEmail);
+          
+          // Refresh user data to get updated info
+          try {
+            const userResponse = await userAPI.getUser(userEmail);
+            dbUser = userResponse?.user || dbUser;
+          } catch (getError) {
+            console.warn('Can\'t refresh user, using existing data');
+          }
+        } catch (updateError) {
+          console.warn('Failed to sync Google info, but user exists:', updateError);
+        }
+      } else {
         // Create new user in our database
         const userName = supabaseUser.user_metadata?.full_name || 
                         supabaseUser.user_metadata?.name || 
@@ -182,7 +257,23 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
           try {
             const userResponse = await userAPI.getUser(userEmail);
             dbUser = userResponse?.user;
-            console.log('✅ User already exists, using existing data:', userEmail);
+            console.log('✅ User already exists, syncing Google info:', userEmail);
+            
+            // Sync Google info to existing user
+            try {
+              await userAPI.updateUser(userEmail, {
+                googleId: supabaseUser.id,
+                avatar: supabaseUser.user_metadata?.avatar_url || supabaseUser.user_metadata?.picture,
+                loginMethod: 'google'
+              });
+              console.log('✅ Google info synced to existing user');
+              
+              // Refresh user data
+              const refreshedResponse = await userAPI.getUser(userEmail);
+              dbUser = refreshedResponse?.user || dbUser;
+            } catch (syncError) {
+              console.warn('Failed to sync Google info:', syncError);
+            }
           } catch (getError: any) {
             // If we can't get user either, check error type
             if (registerError.message?.includes('already exists') || 
@@ -214,38 +305,19 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
             }
           }
         }
-      } else {
-        // User exists - update with Google info if needed
-        console.log('User exists, checking if Google info needs update');
-        if (!dbUser.googleId || !dbUser.avatar) {
-          try {
-            await userAPI.updateUser(userEmail, {
-              googleId: supabaseUser.id,
-              avatar: supabaseUser.user_metadata?.avatar_url || supabaseUser.user_metadata?.picture || dbUser.avatar,
-              loginMethod: 'google'
-            });
-            
-            // Refresh user data
-            try {
-              const userResponse = await userAPI.getUser(userEmail);
-              dbUser = userResponse?.user || dbUser;
-            } catch (getError) {
-              console.warn('Can\'t refresh user after update, using existing data');
-            }
-          } catch (updateError) {
-            // If update fails, continue with existing user data
-            console.warn('Error updating user Google info, using existing data:', updateError);
-          }
-        }
       }
       
-      // Set current user
+      // Set current user and save to localStorage (SYNC ACCOUNTS)
       if (dbUser) {
         setCurrentUser(dbUser);
+        localStorage.setItem('urtree_user_email', dbUser.email);
+        localStorage.removeItem('urtree_logout_flag'); // Clear logout flag on successful login
+        console.log('✅ Google user synced and logged in (account synchronized):', dbUser.email);
+        console.log('✅ Email/password login and Google login now use the same account for:', dbUser.email);
         
-        // Load user's cart (pass email since currentUser might not be updated yet)
+        // Load cart if user is buyer
         if (dbUser.role === 'buyer') {
-          await loadCart(userEmail);
+          await loadCart(dbUser.email);
         }
         
         toast.success('✅ Login dengan Google berhasil!');
@@ -379,6 +451,11 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
       const { user } = await userAPI.login(email, password);
       setCurrentUser(user);
       
+      // Save user email to localStorage for session persistence
+      localStorage.setItem('urtree_user_email', user.email);
+      localStorage.removeItem('urtree_logout_flag'); // Clear logout flag on successful login
+      console.log('✅ User session saved to localStorage:', user.email);
+      
       // Load user's cart
       if (user.role === 'buyer') {
         await loadCart();
@@ -409,11 +486,16 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
       
       if (user) {
         setCurrentUser(user);
+        // Save to localStorage for session persistence
+        localStorage.setItem('urtree_user_email', user.email);
         
         // Load user's cart
         if (user.role === 'buyer') {
           await loadCart();
         }
+        
+        // Clear logout flag on successful login
+        localStorage.removeItem('urtree_logout_flag');
       }
       
       // Return result with message for UI feedback
@@ -431,6 +513,9 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     try {
       const { user } = await userAPI.register(email, password, name);
       setCurrentUser(user);
+      // Save to localStorage for session persistence
+      localStorage.setItem('urtree_user_email', user.email);
+      localStorage.removeItem('urtree_logout_flag'); // Clear logout flag on successful registration
     } catch (error) {
       console.error('Registration failed:', error);
       throw error;
@@ -439,11 +524,27 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
     setCurrentUser(null);
     setCart([]);
     setProducts([]);
     setSellerProducts([]);
+    
+    // SECURITY: Set logout flag to prevent session restore
+    localStorage.setItem('urtree_logout_flag', Date.now().toString());
+    
+    // Clear session from localStorage
+    localStorage.removeItem('urtree_user_email');
+    
+    // Clear Supabase Auth session
+    try {
+      await supabase.auth.signOut();
+      console.log('✅ Supabase Auth session cleared');
+    } catch (error) {
+      console.error('Error clearing Supabase Auth session:', error);
+    }
+    
+    console.log('✅ User session cleared from localStorage');
     setBuyerOrders([]);
     setSellerOrders([]);
     setChatConversations([]);
@@ -460,6 +561,11 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
       const { user } = await userAPI.updateUser(currentUser.email, updates);
       console.log('User updated successfully:', user);
       setCurrentUser(user);
+      // Update localStorage if email changed
+      if (updates.email && updates.email !== currentUser.email) {
+        localStorage.setItem('urtree_user_email', updates.email);
+        localStorage.removeItem('urtree_logout_flag'); // Clear logout flag
+      }
     } catch (error: any) {
       console.error('Update user failed:', error);
       console.error('Error details:', {
@@ -481,6 +587,9 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     try {
       const { user } = await userAPI.applySeller(currentUser.email, sellerData);
       setCurrentUser(user);
+      // Keep session in localStorage
+      localStorage.setItem('urtree_user_email', user.email);
+      localStorage.removeItem('urtree_logout_flag'); // Clear logout flag
     } catch (error) {
       console.error('Apply seller failed:', error);
       throw error;
@@ -496,6 +605,9 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     try {
       const { user } = await userAPI.switchRole(currentUser.email, newRole);
       setCurrentUser(user);
+      // Keep session in localStorage
+      localStorage.setItem('urtree_user_email', user.email);
+      localStorage.removeItem('urtree_logout_flag'); // Clear logout flag
       
       // Load appropriate data based on role
       if (newRole === 'seller') {
@@ -654,11 +766,20 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     
     setIsLoading(true);
     try {
+      console.log('Loading seller orders for:', currentUser.email);
       const { orders } = await orderAPI.getBySeller(currentUser.email);
-      setSellerOrders(orders);
-    } catch (error) {
+      console.log('Loaded seller orders:', orders);
+      setSellerOrders(orders || []);
+    } catch (error: any) {
       console.error('Load seller orders failed:', error);
-      throw error;
+      const errorMessage = error?.message || error?.error || 'Gagal memuat riwayat penjualan';
+      console.error('Full error:', error);
+      // Don't throw error, just set empty array to prevent white screen
+      setSellerOrders([]);
+      // Show error toast instead
+      if (errorMessage.includes('Seller not found')) {
+        console.error('Seller not found - user might not be a seller');
+      }
     } finally {
       setIsLoading(false);
     }
@@ -667,13 +788,18 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
   const createOrder = async (orderData: any) => {
     setIsLoading(true);
     try {
-      const { order } = await orderAPI.create({
+      const response = await orderAPI.create({
         ...orderData,
         buyerEmail: currentUser?.email,
         buyerName: currentUser?.name,
       });
       await clearCart();
-      return order;
+      // Reload buyer orders to show the new order
+      if (currentUser) {
+        await loadBuyerOrders();
+      }
+      // Return the full response (includes order and snapToken)
+      return response;
     } catch (error) {
       console.error('Create order failed:', error);
       throw error;
@@ -682,16 +808,21 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const updateOrderStatus = async (orderId: string, status: string) => {
+  const updateOrderStatus = async (orderId: string, status: string, trackingNumber?: string) => {
     setIsLoading(true);
     try {
-      await orderAPI.updateStatus(orderId, status);
-      // Reload orders
+      console.log('[updateOrderStatus] Updating order:', { orderId, status, trackingNumber });
+      const response = await orderAPI.updateStatus(orderId, status, trackingNumber);
+      console.log('[updateOrderStatus] API response:', response);
+      
+      // Reload orders for both buyer and seller to ensure sync
       if (currentUser?.role === 'buyer') {
         await loadBuyerOrders();
       } else if (currentUser?.role === 'seller') {
         await loadSellerOrders();
       }
+      
+      console.log('[updateOrderStatus] Orders reloaded, status updated:', { orderId, status, trackingNumber });
     } catch (error) {
       console.error('Update order status failed:', error);
       throw error;
@@ -702,13 +833,27 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
 
   // Chat functions
   const loadChatConversations = async () => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      console.log('[loadChatConversations] No current user, skipping');
+      return;
+    }
     
     try {
-      const { chats } = await chatAPI.getConversations(currentUser.email);
+      console.log('[loadChatConversations] Loading for:', currentUser.email, 'Role:', currentUser.role, 'ID:', currentUser.id);
+      const response = await chatAPI.getConversations(currentUser.email);
+      console.log('[loadChatConversations] Full response:', response);
+      const chats = response?.chats || [];
+      console.log('[loadChatConversations] Received chats:', chats);
+      console.log('[loadChatConversations] Number of chats:', chats.length);
+      if (chats.length > 0) {
+        console.log('[loadChatConversations] First chat:', chats[0]);
+      }
       setChatConversations(chats);
-    } catch (error) {
-      console.error('Load chat conversations failed:', error);
+      console.log('[loadChatConversations] Updated state with', chats.length, 'conversations');
+    } catch (error: any) {
+      console.error('[loadChatConversations] Failed:', error);
+      console.error('[loadChatConversations] Error details:', error?.message, error?.error);
+      setChatConversations([]);
     }
   };
 
@@ -718,9 +863,16 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     try {
       await userAPI.setPin(email, pin);
       
-      // Update current user to reflect PIN is set
+      // Refresh user from database to get updated hasPin status
       if (currentUser && currentUser.email === email) {
+        try {
+          const { user: updatedUser } = await userAPI.getUser(email);
+          setCurrentUser(updatedUser);
+        } catch (refreshError) {
+          console.error('Failed to refresh user after set PIN:', refreshError);
+          // Fallback: update current user to reflect PIN is set
         setCurrentUser({ ...currentUser, hasPin: true });
+        }
       }
     } catch (error) {
       console.error('Set PIN failed:', error);
@@ -744,6 +896,16 @@ export function DatabaseProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     try {
       await userAPI.changePin(email, newPin);
+      
+      // Refresh user from database to get updated hasPin status (though it shouldn't change)
+      if (currentUser && currentUser.email === email) {
+        try {
+          const { user: updatedUser } = await userAPI.getUser(email);
+          setCurrentUser(updatedUser);
+        } catch (refreshError) {
+          console.error('Failed to refresh user after change PIN:', refreshError);
+        }
+      }
     } catch (error) {
       console.error('Change PIN failed:', error);
       throw error;

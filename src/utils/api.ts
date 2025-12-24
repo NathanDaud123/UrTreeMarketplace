@@ -6,6 +6,28 @@ const API_BASE_URL = `${supabaseUrl}/functions/v1/make-server-0eb859c3`;
 // Create Supabase client for Auth
 const supabase = createClient(supabaseUrl, publicAnonKey);
 
+// Upload file to Supabase Storage
+export const uploadFile = async (file: File, bucket: string, path: string): Promise<string> => {
+  try {
+    // Convert file to base64 for now (since we don't have storage bucket set up)
+    // In production, use Supabase Storage API
+    const reader = new FileReader();
+    const base64Promise = new Promise<string>((resolve, reject) => {
+      reader.onloadend = () => {
+        resolve(reader.result as string);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+    
+    const base64Data = await base64Promise;
+    return base64Data;
+  } catch (error) {
+    console.error('Error uploading file:', error);
+    throw new Error('Failed to upload file');
+  }
+};
+
 // Helper function to make API requests
 async function apiRequest(
   endpoint: string,
@@ -69,7 +91,9 @@ async function apiRequest(
          error.name === 'TypeError' ||
          error.message?.includes('Network request failed')) &&
         !error.status) { // Only if we didn't get a response status (actual network failure)
-      throw new Error(`Tidak dapat terhubung ke server. Pastikan edge function sudah di-deploy di Supabase.`);
+      const errorMsg = `Tidak dapat terhubung ke server. Pastikan edge function sudah di-deploy di Supabase. URL: ${API_BASE_URL}${endpoint}`;
+      console.error('Network error:', errorMsg);
+      throw new Error(errorMsg);
     }
     
     throw error;
@@ -153,10 +177,11 @@ export const userAPI = {
 // ==================== PRODUCT API ====================
 
 export const productAPI = {
-  getAll: async (filters?: { category?: string; search?: string }) => {
+  getAll: async (filters?: { category?: string; search?: string; includeInactive?: boolean }) => {
     const params = new URLSearchParams();
     if (filters?.category) params.append('category', filters.category);
     if (filters?.search) params.append('search', filters.search);
+    if (filters?.includeInactive) params.append('includeInactive', 'true');
     const query = params.toString() ? `?${params.toString()}` : '';
     return apiRequest(`/products${query}`);
   },
@@ -217,28 +242,40 @@ export const orderAPI = {
     return apiRequest(`/orders/${id}`);
   },
 
-  updateStatus: async (id: string, status: string) => {
-    return apiRequest(`/orders/${id}/status`, 'PUT', { status });
+  updateStatus: async (id: string, status: string, trackingNumber?: string) => {
+    return apiRequest(`/orders/${id}/status`, 'PUT', { status, trackingNumber });
+  },
+};
+
+// ==================== SELLER API ====================
+
+export const sellerAPI = {
+  getPaymentInfo: async (sellerId: string) => {
+    return apiRequest(`/sellers/${encodeURIComponent(sellerId)}/payment-info`);
   },
 };
 
 // ==================== CHAT API ====================
 
 export const chatAPI = {
-  getConversations: async (userId: string) => {
-    return apiRequest(`/chats/${encodeURIComponent(userId)}`);
+  getConversations: async (email: string) => {
+    return apiRequest(`/chats/${encodeURIComponent(email)}`);
   },
 
-  getOrCreate: async (buyerId: string, sellerId: string, productId: string) => {
-    return apiRequest('/chats', 'POST', { buyerId, sellerId, productId });
+  getOrCreate: async (buyerId: string, sellerId: string, productId?: string, orderId?: string) => {
+    return apiRequest('/chats', 'POST', { buyerId, sellerId, productId, orderId });
   },
 
   getMessages: async (chatId: string) => {
     return apiRequest(`/chats/${chatId}/messages`);
   },
 
-  sendMessage: async (chatId: string, messageData: any) => {
-    return apiRequest(`/chats/${chatId}/messages`, 'POST', messageData);
+  sendMessage: async (chatId: string, senderId: string, message: string, messageType?: string, attachmentUrl?: string) => {
+    return apiRequest(`/chats/${chatId}/messages`, 'POST', { senderId, message, messageType, attachmentUrl });
+  },
+
+  markAsRead: async (chatId: string, userId: string) => {
+    return apiRequest(`/chats/${chatId}/read`, 'PUT', { userId });
   },
 };
 
@@ -279,6 +316,10 @@ export const adminAPI = {
 
   rejectSellerApplication: async (applicationId: string) => {
     return apiRequest(`/admin/seller-applications/${applicationId}/reject`, 'POST');
+  },
+
+  getUserDetail: async (email: string) => {
+    return apiRequest(`/admin/users/${encodeURIComponent(email)}`);
   },
 };
 

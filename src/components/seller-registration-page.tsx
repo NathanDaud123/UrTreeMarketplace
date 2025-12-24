@@ -46,6 +46,8 @@ export interface SellerRegistrationData {
   kycBankName?: string;
   kycAccountNumber?: string;
   kycAccountName?: string;
+  eWalletTypes?: string[];
+  eWalletPhone?: string;
 }
 
 export function SellerRegistrationPage({ onSubmit, onBack }: SellerRegistrationPageProps) {
@@ -62,6 +64,11 @@ export function SellerRegistrationPage({ onSubmit, onBack }: SellerRegistrationP
   const [kycBankName, setKycBankName] = useState('');
   const [kycAccountNumber, setKycAccountNumber] = useState('');
   const [kycAccountName, setKycAccountName] = useState('');
+  // E-Wallet
+  const [eWalletDana, setEWalletDana] = useState(false);
+  const [eWalletOvo, setEWalletOvo] = useState(false);
+  const [eWalletShopeePay, setEWalletShopeePay] = useState(false);
+  const [eWalletGoPay, setEWalletGoPay] = useState(false);
 
   const validateForm = (): boolean => {
     // Validate shop data
@@ -134,32 +141,67 @@ export function SellerRegistrationPage({ onSubmit, onBack }: SellerRegistrationP
     return true;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (validateForm()) {
-      onSubmit({
-        shopName,
-        shopDescription,
-        shopAddress,
-        shopCity,
-        address: shopAddress,
-        city: shopCity,
-        phone: kycPhone,
-        identityType: 'KTP',
-        identityNumber: kycKtpNumber,
-        identityPhoto: kycKtpPhoto ? URL.createObjectURL(kycKtpPhoto) : '',
-        bankName: kycBankName,
-        bankAccountNumber: kycAccountNumber,
-        bankAccountName: kycAccountName,
-        // KYC fields with kyc prefix for compatibility
-        kycKtpNumber,
-        kycKtpPhoto: kycKtpPhoto ? URL.createObjectURL(kycKtpPhoto) : '',
-        kycBankName,
-        kycAccountNumber,
-        kycAccountName,
-      });
+    if (!validateForm()) return;
+
+    let ktpPhotoUrl = '';
+    
+    // Upload KTP photo if exists
+    if (kycKtpPhoto) {
+      try {
+        toast.info('Mengupload foto KTP...');
+        // Convert to base64 for storage
+        const reader = new FileReader();
+        const base64Promise = new Promise<string>((resolve, reject) => {
+          reader.onloadend = () => {
+            resolve(reader.result as string);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(kycKtpPhoto);
+        });
+        
+        ktpPhotoUrl = await base64Promise;
+        toast.success('Foto KTP berhasil diupload');
+      } catch (error) {
+        console.error('Error uploading KTP photo:', error);
+        toast.error('Gagal mengupload foto KTP. Silakan coba lagi.');
+        return;
+      }
     }
+
+    // Collect selected e-wallet types
+    const eWalletTypes: string[] = [];
+    if (eWalletDana) eWalletTypes.push('dana');
+    if (eWalletOvo) eWalletTypes.push('ovo');
+    if (eWalletShopeePay) eWalletTypes.push('shopeepay');
+    if (eWalletGoPay) eWalletTypes.push('gopay');
+
+    onSubmit({
+      shopName,
+      shopDescription,
+      shopAddress,
+      shopCity,
+      address: shopAddress,
+      city: shopCity,
+      phone: kycPhone,
+      identityType: 'KTP',
+      identityNumber: kycKtpNumber,
+      identityPhoto: ktpPhotoUrl,
+      bankName: kycBankName,
+      bankAccountNumber: kycAccountNumber,
+      bankAccountName: kycAccountName,
+      // KYC fields with kyc prefix for compatibility
+      kycKtpNumber,
+      kycKtpPhoto: ktpPhotoUrl,
+      kycBankName,
+      kycAccountNumber,
+      kycAccountName,
+      // E-Wallet
+      eWalletTypes,
+      eWalletPhone: kycPhone, // Use phone number as e-wallet number
+    });
   };
 
   return (
@@ -430,6 +472,73 @@ export function SellerRegistrationPage({ onSubmit, onBack }: SellerRegistrationP
                     className="mt-2"
                   />
                   <p className="text-xs text-gray-500 mt-1">Harus sesuai dengan nama di KTP</p>
+                </div>
+              </div>
+
+              {/* E-Wallet Selection */}
+              <div className="space-y-4">
+                <div>
+                  <Label className="font-semibold flex items-center gap-2 mb-3">
+                    <CreditCard className="w-4 h-4" />
+                    E-Wallet yang Tersedia <span className="text-gray-500 text-sm font-normal">(Opsional - bisa pilih beberapa)</span>
+                  </Label>
+                  <p className="text-xs text-gray-500 mb-3">
+                    Nomor telepon Anda ({kycPhone || 'belum diisi'}) akan digunakan sebagai nomor e-wallet
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex items-center space-x-2 border rounded-lg p-3 hover:border-green-500 transition-colors">
+                      <input
+                        type="checkbox"
+                        id="ewallet-dana"
+                        checked={eWalletDana}
+                        onChange={(e) => setEWalletDana(e.target.checked)}
+                        className="w-4 h-4 text-green-600"
+                      />
+                      <Label htmlFor="ewallet-dana" className="cursor-pointer flex-1">
+                        <div className="font-medium">DANA</div>
+                        <div className="text-xs text-gray-500">Nomor: {kycPhone || '-'}</div>
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2 border rounded-lg p-3 hover:border-green-500 transition-colors">
+                      <input
+                        type="checkbox"
+                        id="ewallet-ovo"
+                        checked={eWalletOvo}
+                        onChange={(e) => setEWalletOvo(e.target.checked)}
+                        className="w-4 h-4 text-green-600"
+                      />
+                      <Label htmlFor="ewallet-ovo" className="cursor-pointer flex-1">
+                        <div className="font-medium">OVO</div>
+                        <div className="text-xs text-gray-500">Nomor: {kycPhone || '-'}</div>
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2 border rounded-lg p-3 hover:border-green-500 transition-colors">
+                      <input
+                        type="checkbox"
+                        id="ewallet-shopeepay"
+                        checked={eWalletShopeePay}
+                        onChange={(e) => setEWalletShopeePay(e.target.checked)}
+                        className="w-4 h-4 text-green-600"
+                      />
+                      <Label htmlFor="ewallet-shopeepay" className="cursor-pointer flex-1">
+                        <div className="font-medium">ShopeePay</div>
+                        <div className="text-xs text-gray-500">Nomor: {kycPhone || '-'}</div>
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2 border rounded-lg p-3 hover:border-green-500 transition-colors">
+                      <input
+                        type="checkbox"
+                        id="ewallet-gopay"
+                        checked={eWalletGoPay}
+                        onChange={(e) => setEWalletGoPay(e.target.checked)}
+                        className="w-4 h-4 text-green-600"
+                      />
+                      <Label htmlFor="ewallet-gopay" className="cursor-pointer flex-1">
+                        <div className="font-medium">GoPay</div>
+                        <div className="text-xs text-gray-500">Nomor: {kycPhone || '-'}</div>
+                      </Label>
+                    </div>
+                  </div>
                 </div>
               </div>
 

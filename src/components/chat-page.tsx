@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { ScrollArea } from './ui/scroll-area';
 import { toast } from 'sonner@2.0.3';
+import { chatAPI } from '../utils/api';
 
 export interface ChatMessage {
   id: string;
@@ -57,8 +58,49 @@ export function ChatPage({
   const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
   const [inputMessage, setInputMessage] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load messages from database
+  useEffect(() => {
+    let isMounted = true;
+    
+    const loadMessages = async () => {
+      if (!isMounted) return;
+      
+      try {
+        const { messages: loadedMessages } = await chatAPI.getMessages(conversation.id);
+        if (isMounted) {
+          setMessages(loadedMessages || []);
+          setIsLoading(false);
+          
+          // Mark messages as read
+          await chatAPI.markAsRead(conversation.id, currentUserId);
+        }
+      } catch (error) {
+        if (isMounted) {
+          console.error('Error loading messages:', error);
+          setIsLoading(false);
+        }
+      }
+    };
+    
+    if (conversation.id) {
+      setIsLoading(true);
+      loadMessages();
+      
+      // Auto-refresh messages every 2 seconds
+      const interval = setInterval(() => {
+        loadMessages();
+      }, 2000);
+      
+      return () => {
+        isMounted = false;
+        clearInterval(interval);
+      };
+    }
+  }, [conversation.id, currentUserId]);
 
   useEffect(() => {
     // Auto scroll to bottom when new messages arrive
@@ -67,30 +109,39 @@ export function ChatPage({
     }
   }, [messages]);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!inputMessage.trim()) return;
 
-    const newMessage: ChatMessage = {
-      id: `msg-${Date.now()}`,
+    const messageText = inputMessage.trim();
+    setInputMessage('');
+
+    // Optimistically add message to UI
+    const tempMessage: ChatMessage = {
+      id: `temp-${Date.now()}`,
       senderId: currentUserId,
       senderName: currentUserName,
-      message: inputMessage.trim(),
+      message: messageText,
       timestamp: new Date().toISOString(),
       type: 'text',
       isRead: false,
     };
 
-    setMessages([...messages, newMessage]);
-    onSendMessage(inputMessage.trim());
-    setInputMessage('');
+    setMessages([...messages, tempMessage]);
 
-    // Simulate typing indicator
-    setIsTyping(true);
-    setTimeout(() => {
-      setIsTyping(false);
-    }, 1500);
-
-    toast.success('Pesan terkirim');
+    try {
+      // Send message to server
+      await onSendMessage(messageText);
+      
+      // Reload messages to get the actual message from database
+      const { messages: updatedMessages } = await chatAPI.getMessages(conversation.id);
+      setMessages(updatedMessages || []);
+      
+      toast.success('Pesan terkirim');
+    } catch (error) {
+      // Remove temp message on error
+      setMessages(messages);
+      toast.error('Gagal mengirim pesan');
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -341,6 +392,13 @@ interface ChatListProps {
 
 export function ChatList({ conversations, onSelectConversation, onBack }: ChatListProps) {
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  
+  // Debug: log conversations
+  useEffect(() => {
+    console.log('[ChatList] Received conversations:', conversations);
+    console.log('[ChatList] Number of conversations:', conversations?.length || 0);
+    console.log('[ChatList] Conversations data:', JSON.stringify(conversations, null, 2));
+  }, [conversations]);
 
   const filteredConversations = conversations.filter((conv) => {
     if (filter === 'unread') return conv.unreadCount > 0;
@@ -425,7 +483,9 @@ export function ChatList({ conversations, onSelectConversation, onBack }: ChatLi
                       </span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <p className="text-sm text-gray-600 truncate">{conv.lastMessage}</p>
+                      <p className="text-sm text-gray-600 truncate">
+                        {conv.lastMessage || 'Belum ada pesan'}
+                      </p>
                       {conv.unreadCount > 0 && (
                         <Badge className="ml-2 flex-shrink-0 bg-green-600">
                           {conv.unreadCount}

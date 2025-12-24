@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -15,7 +15,7 @@ import { Checkbox } from './ui/checkbox';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from './ui/sheet';
 import { SlidersHorizontal } from 'lucide-react';
 import type { Product, ProductCategory } from '../App';
-import { MOCK_PRODUCTS, filterProducts } from '../lib/mock-data';
+import { productAPI } from '../utils/api';
 import { Store } from 'lucide-react';
 
 interface ProductListingPageProps {
@@ -29,6 +29,9 @@ export function ProductListingPage({
   searchQuery,
   onProductSelect,
 }: ProductListingPageProps) {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<string>('');
   const [minPrice, setMinPrice] = useState<number>(0);
   const [maxPrice, setMaxPrice] = useState<number>(1000000);
@@ -37,18 +40,95 @@ export function ProductListingPage({
   const [locationFilter, setLocationFilter] = useState<string>('');
   const [radiusKm, setRadiusKm] = useState<number[]>([100]);
 
+  // Fetch products from database
+  useEffect(() => {
+    const loadProducts = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await productAPI.getAll({
+          category: category || undefined,
+          search: searchQuery || undefined,
+        });
+        if (response.products && Array.isArray(response.products)) {
+          setProducts(response.products);
+        } else {
+          setProducts([]);
+        }
+      } catch (err: any) {
+        console.error('Error loading products:', err);
+        setError('Gagal memuat produk');
+        setProducts([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadProducts();
+  }, [category, searchQuery]);
+
+  // Filter and sort products
   const filteredProducts = useMemo(() => {
-    return filterProducts(MOCK_PRODUCTS, {
-      category: category || undefined,
-      searchQuery,
-      sortBy,
-      minPrice: minPrice > 0 ? minPrice : undefined,
-      maxPrice: maxPrice < 1000000 ? maxPrice : undefined,
-      minRating: minRating > 0 ? minRating : undefined,
-      plantAge: selectedPlantAges.length > 0 ? selectedPlantAges : undefined,
-      location: locationFilter && locationFilter !== 'all' ? locationFilter : undefined,
-    });
-  }, [category, searchQuery, sortBy, minPrice, maxPrice, minRating, selectedPlantAges, locationFilter]);
+    let filtered = [...products];
+
+    // Filter by stock (only show products with stock)
+    filtered = filtered.filter(product => product.stock > 0);
+
+    // Filter by price range
+    if (minPrice > 0) {
+      filtered = filtered.filter(product => product.price >= minPrice);
+    }
+    if (maxPrice < 1000000) {
+      filtered = filtered.filter(product => product.price <= maxPrice);
+    }
+
+    // Filter by rating (seller rating)
+    if (minRating > 0) {
+      filtered = filtered.filter(product => (product.sellerRating || 0) >= minRating);
+    }
+
+    // Filter by plant age (for tanaman hidup)
+    if (selectedPlantAges.length > 0 && category === 'tanaman-hidup') {
+      filtered = filtered.filter(product => {
+        if (!product.plantAge) return false;
+        return selectedPlantAges.some(age => {
+          if (age === '<1thn') return product.plantAge?.includes('bulan') || product.plantAge?.includes('minggu');
+          if (age === '1thn+') return product.plantAge?.includes('tahun') && !product.plantAge?.includes('3');
+          if (age === '3thn+') return product.plantAge?.includes('3') || product.plantAge?.includes('lebih');
+          return false;
+        });
+      });
+    }
+
+    // Filter by location
+    if (locationFilter && locationFilter !== 'all') {
+      filtered = filtered.filter(product => 
+        product.sellerLocation?.toLowerCase().includes(locationFilter.toLowerCase())
+      );
+    }
+
+    // Sort products
+    if (sortBy) {
+      filtered.sort((a, b) => {
+        switch (sortBy) {
+          case 'newest':
+            return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+          case 'bestseller':
+            return (b.sold || 0) - (a.sold || 0);
+          case 'price-low':
+            return a.price - b.price;
+          case 'price-high':
+            return b.price - a.price;
+          case 'rating':
+            return (b.rating || 0) - (a.rating || 0);
+          default:
+            return 0;
+        }
+      });
+    }
+
+    return filtered;
+  }, [products, sortBy, minPrice, maxPrice, minRating, selectedPlantAges, locationFilter, category]);
 
   const handlePlantAgeToggle = (age: string) => {
     setSelectedPlantAges(prev =>
@@ -200,7 +280,9 @@ export function ProductListingPage({
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="mb-1">{getCategoryTitle()}</h2>
-          <p className="text-gray-600">{filteredProducts.length} produk ditemukan</p>
+          <p className="text-gray-600">
+            {loading ? 'Memuat...' : `${filteredProducts.length} produk ditemukan`}
+          </p>
         </div>
 
         {/* Mobile Filter Button */}
@@ -235,7 +317,22 @@ export function ProductListingPage({
 
         {/* Product Grid */}
         <div className="flex-1">
-          {filteredProducts.length === 0 ? (
+          {loading ? (
+            <Card className="shadow-md border-0">
+              <CardContent className="p-12 text-center">
+                <div className="text-gray-500">Memuat produk...</div>
+              </CardContent>
+            </Card>
+          ) : error ? (
+            <Card className="shadow-md border-0">
+              <CardContent className="p-12 text-center">
+                <div className="text-red-500 mb-4">{error}</div>
+                <Button onClick={() => window.location.reload()} variant="outline">
+                  Coba Lagi
+                </Button>
+              </CardContent>
+            </Card>
+          ) : filteredProducts.length === 0 ? (
             <Card className="shadow-md border-0">
               <CardContent className="p-12 text-center">
                 <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">

@@ -159,18 +159,6 @@ export function Navbar({
                     </Button>
                   )}
 
-                  {/* Messages - For sellers and buyers */}
-                  {user.role !== 'admin' && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => onNavigate('chat-list')}
-                      className="relative"
-                    >
-                      <MessageCircle className="w-5 h-5" />
-                    </Button>
-                  )}
-
                   {/* User Menu */}
                   <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -195,17 +183,17 @@ export function Navbar({
                   </div>
                   <DropdownMenuSeparator />
                   
-                  {user.role === 'buyer' && !user.isPendingSeller && !user.hasSellerAccount && (
+                  {user.role === 'buyer' && !user.isPendingSeller && (user.hasSellerAccount === false || !user.hasSellerAccount) && (
                     <>
                       <DropdownMenuItem onClick={handleApplySeller}>
                         <UserPlus className="w-4 h-4 mr-2" />
-                        Daftar Jadi Penjual
+                        Ajukan Penjual
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                     </>
                   )}
 
-                  {user.role === 'buyer' && user.hasSellerAccount && onSwitchRole && (
+                  {user.role === 'buyer' && user.hasSellerAccount === true && !user.isPendingSeller && onSwitchRole && (
                     <>
                       <DropdownMenuItem 
                         onClick={() => onSwitchRole('seller')}
@@ -232,10 +220,6 @@ export function Navbar({
                       <DropdownMenuItem onClick={() => onNavigate('transaction-history-buyer')}>
                         <History className="w-4 h-4 mr-2" />
                         Riwayat Pembelian
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onNavigate('chat-list')}>
-                        <MessageCircle className="w-4 h-4 mr-2" />
-                        Pesan
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => onNavigate('profile')}>
                         <User className="w-4 h-4 mr-2" />
@@ -270,10 +254,6 @@ export function Navbar({
                         </DropdownMenuItem>
                       )}
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={() => onNavigate('chat-list')}>
-                        <MessageCircle className="w-4 h-4 mr-2" />
-                        Pesan
-                      </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => onNavigate('profile')}>
                         <User className="w-4 h-4 mr-2" />
                         Profil Saya

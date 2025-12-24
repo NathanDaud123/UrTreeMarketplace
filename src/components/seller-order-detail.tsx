@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
@@ -33,12 +33,19 @@ interface SellerOrderDetailProps {
   transaction: SellerTransaction;
   onBack: () => void;
   onOpenChat: (buyerName: string, orderId: string) => void;
+  onUpdateStatus?: (orderId: string, status: string, trackingNumber?: string) => Promise<void>;
 }
 
-export function SellerOrderDetail({ transaction, onBack, onOpenChat }: SellerOrderDetailProps) {
+export function SellerOrderDetail({ transaction, onBack, onOpenChat, onUpdateStatus }: SellerOrderDetailProps) {
   const [status, setStatus] = useState(transaction.status);
   const [trackingNumber, setTrackingNumber] = useState(transaction.trackingNumber || '');
   const [notes, setNotes] = useState('');
+  
+  // Update local state when transaction prop changes
+  useEffect(() => {
+    setStatus(transaction.status);
+    setTrackingNumber(transaction.trackingNumber || '');
+  }, [transaction.status, transaction.trackingNumber]);
 
   const getStatusBadge = (status: SellerTransaction['status']) => {
     switch (status) {
@@ -77,12 +84,32 @@ export function SellerOrderDetail({ transaction, onBack, onOpenChat }: SellerOrd
     }
   };
 
-  const handleUpdateStatus = () => {
+  const handleUpdateStatus = async () => {
     if (status === 'shipped' && !trackingNumber.trim()) {
       toast.error('Nomor resi wajib diisi untuk status Dikirim');
       return;
     }
-    toast.success('✅ Status pesanan berhasil diperbarui!');
+    
+    if (!onUpdateStatus) {
+      toast.error('Update status tidak tersedia');
+      return;
+    }
+    
+    try {
+      // Map frontend status to database status
+      let dbStatus = status;
+      if (status === 'pending') dbStatus = 'pending';
+      else if (status === 'processing') dbStatus = 'processing';
+      else if (status === 'shipped') dbStatus = 'in_delivery';
+      else if (status === 'completed') dbStatus = 'completed';
+      else if (status === 'cancelled') dbStatus = 'cancelled';
+      
+      await onUpdateStatus(transaction.id, dbStatus, trackingNumber.trim() || undefined);
+      toast.success('✅ Status pesanan berhasil diperbarui!');
+    } catch (error: any) {
+      console.error('Error updating status:', error);
+      toast.error(error?.message || 'Gagal memperbarui status pesanan');
+    }
   };
 
   const handlePrintLabel = () => {
@@ -333,6 +360,29 @@ export function SellerOrderDetail({ transaction, onBack, onOpenChat }: SellerOrd
                   <div>{transaction.paymentMethod}</div>
                 </div>
               </div>
+
+              {/* Payment Proof (for non-COD orders) */}
+              {transaction.paymentMethod !== 'cod' && transaction.paymentProofUrl && (
+                <div className="flex items-start gap-3">
+                  <DollarSign className="w-5 h-5 text-gray-600 mt-0.5" />
+                  <div className="flex-1">
+                    <div className="text-sm text-gray-600 mb-2">Bukti Transfer</div>
+                    <div className="border rounded-lg p-3 bg-gray-50">
+                      <img
+                        src={transaction.paymentProofUrl}
+                        alt="Payment proof"
+                        className="w-full max-w-md rounded cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => {
+                          window.open(transaction.paymentProofUrl, '_blank');
+                        }}
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-2">
+                      Klik gambar untuk melihat ukuran penuh
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <Separator />
 

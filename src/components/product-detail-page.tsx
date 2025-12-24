@@ -3,7 +3,7 @@ import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
 import { Separator } from './ui/separator';
 import { Badge } from './ui/badge';
-import { ArrowLeft, ShoppingCart, Store, MapPin, Truck } from 'lucide-react';
+import { ArrowLeft, ShoppingCart, Store, MapPin, Truck, MessageCircle } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,6 +24,7 @@ interface ProductDetailPageProps {
   onBackToList: () => void;
   isUserLoggedIn?: boolean;
   onLoginRequired?: () => void;
+  onOpenChat?: (sellerName: string, productId?: string) => void;
 }
 
 export function ProductDetailPage({
@@ -33,6 +34,7 @@ export function ProductDetailPage({
   onBackToList,
   isUserLoggedIn = true,
   onLoginRequired,
+  onOpenChat,
 }: ProductDetailPageProps) {
   const [quantity, setQuantity] = useState(1);
   const [showLoginDialog, setShowLoginDialog] = useState(false);
@@ -135,6 +137,17 @@ export function ProductDetailPage({
                     <span className="text-yellow-500">★</span> {product.sellerRating}
                   </div>
                 </div>
+                {isUserLoggedIn && onOpenChat && (
+                  <Button
+                    onClick={() => onOpenChat(product.sellerName, product.id)}
+                    variant="outline"
+                    size="sm"
+                    className="border-blue-600 text-blue-600 hover:bg-blue-50"
+                  >
+                    <MessageCircle className="w-4 h-4 mr-2" />
+                    Hubungi Penjual
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>

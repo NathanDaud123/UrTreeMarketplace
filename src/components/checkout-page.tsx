@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select';
-import { AlertCircle, CheckCircle2, Wallet, CreditCard, Banknote, Building2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Wallet, CreditCard, Building2, Upload, X, Image as ImageIcon } from 'lucide-react';
 import type { CartItem } from '../App';
 import { toast } from 'sonner@2.0.3';
 import { PinVerificationDialog } from './pin-verification-dialog';
@@ -84,10 +84,18 @@ export function CheckoutPage({
   const [address, setAddress] = useState(currentUser?.address || '');
   const [city, setCity] = useState(currentUser?.city || '');
   const [paymentMethod, setPaymentMethod] = useState('');
+  const [paymentProofImage, setPaymentProofImage] = useState<string | null>(null);
+  const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [validationComplete, setValidationComplete] = useState(false);
   const [showPinDialog, setShowPinDialog] = useState(false);
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  
+  // UrTree payment info (fixed)
+  const URTREE_BANK_NAME = 'Bank Mandiri';
+  const URTREE_BANK_ACCOUNT = '12345678';
+  const URTREE_BANK_ACCOUNT_NAME = 'PT UrTree Marketplace';
+  const URTREE_EWALLET_PHONE = '089523487969';
 
   // Load Midtrans Snap script
   useEffect(() => {
@@ -122,6 +130,7 @@ export function CheckoutPage({
       // Don't remove script on unmount to prevent reload issues
     };
   }, []);
+
 
   // Auto-fill form when currentUser data is available
   useEffect(() => {
@@ -205,6 +214,12 @@ export function CheckoutPage({
       return;
     }
 
+    // Validate payment proof for non-COD methods
+    if (paymentMethod !== 'cod' && !paymentProofImage) {
+      toast.error('Harap upload bukti transfer terlebih dahulu');
+      return;
+    }
+
     // Check if user has PIN, if yes show verification dialog
     if (currentUser?.hasPin) {
       setShowPinDialog(true);
@@ -251,6 +266,7 @@ export function CheckoutPage({
           city,
         },
         paymentMethod,
+        paymentProofUrl: paymentProofImage || null,
         subtotal,
         shippingCost,
         total,
@@ -484,24 +500,168 @@ export function CheckoutPage({
                       </div>
                     </Label>
                   </div>
-
-                  {/* Credit Card */}
-                  <div className="flex items-center space-x-3 border rounded-lg p-4 hover:border-green-500 transition-colors">
-                    <RadioGroupItem value="credit-card" id="credit-card" />
-                    <Label htmlFor="credit-card" className="flex items-center gap-3 cursor-pointer flex-1">
-                      <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center">
-                        <Banknote className="w-5 h-5 text-orange-600" />
-                      </div>
-                      <div className="flex-1">
-                        <div className="font-medium">Kartu Kredit/Debit</div>
-                        <div className="text-sm text-gray-600">Visa, Mastercard, JCB</div>
-                      </div>
-                    </Label>
-                  </div>
                 </div>
               </RadioGroup>
             </CardContent>
           </Card>
+
+          {/* Payment Info Display */}
+          {paymentMethod && paymentMethod !== 'cod' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  {paymentMethod === 'bank-transfer' ? 'Informasi Rekening Bank' : 'Informasi E-Wallet'}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {paymentMethod === 'bank-transfer' ? (
+                  <div className="space-y-3 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Building2 className="w-5 h-5 text-blue-600" />
+                      <span className="font-semibold text-blue-900">{URTREE_BANK_NAME}</span>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <span className="text-gray-600">Nomor Rekening:</span>
+                        <span className="ml-2 font-mono font-semibold text-gray-900">
+                          {URTREE_BANK_ACCOUNT}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Nama Pemilik:</span>
+                        <span className="ml-2 font-semibold text-gray-900">
+                          {URTREE_BANK_ACCOUNT_NAME}
+                        </span>
+                      </div>
+                    </div>
+                    <Alert className="mt-3 bg-blue-50 border-blue-200">
+                      <AlertCircle className="h-4 w-4 text-blue-600" />
+                      <AlertDescription className="text-xs text-blue-800">
+                        Transfer ke rekening UrTree. Pembayaran akan didistribusikan ke penjual setelah konfirmasi.
+                      </AlertDescription>
+                    </Alert>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                      <div className="flex items-center gap-2 mb-3">
+                        <CreditCard className="w-5 h-5 text-green-600" />
+                        <span className="font-semibold text-green-900">E-Wallet UrTree</span>
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between p-3 bg-white rounded border">
+                          <span className="font-medium text-gray-900">DANA / OVO / ShopeePay / GoPay</span>
+                          <span className="text-sm font-mono font-semibold text-gray-900">
+                            {URTREE_EWALLET_PHONE}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <Alert className="bg-green-50 border-green-200">
+                      <AlertCircle className="h-4 w-4 text-green-600" />
+                      <AlertDescription className="text-xs text-green-800">
+                        Transfer ke e-wallet UrTree. Pembayaran akan didistribusikan ke penjual setelah konfirmasi.
+                      </AlertDescription>
+                    </Alert>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Payment Proof Upload (for non-COD methods) */}
+          {paymentMethod && paymentMethod !== 'cod' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Upload Bukti Transfer</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!paymentProofImage ? (
+                  <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-green-500 transition-colors">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          if (file.size > 5 * 1024 * 1024) {
+                            toast.error('Ukuran file maksimal 5MB');
+                            return;
+                          }
+                          if (!file.type.startsWith('image/')) {
+                            toast.error('Hanya file gambar yang diperbolehkan');
+                            return;
+                          }
+                          setPaymentProofFile(file);
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setPaymentProofImage(reader.result as string);
+                            toast.success('Bukti transfer berhasil diupload');
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="hidden"
+                      id="payment-proof-upload"
+                    />
+                    <label
+                      htmlFor="payment-proof-upload"
+                      className="cursor-pointer flex flex-col items-center gap-2"
+                    >
+                      <Upload className="w-8 h-8 text-gray-400" />
+                      <span className="text-sm text-gray-600">
+                        Klik untuk upload bukti transfer
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        Format: JPG, PNG (Max 5MB)
+                      </span>
+                    </label>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <div className="border rounded-lg p-4 bg-gray-50">
+                      <div className="flex items-center gap-3">
+                        <div className="w-20 h-20 rounded overflow-hidden bg-white border">
+                          <img
+                            src={paymentProofImage}
+                            alt="Payment proof"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-gray-700">
+                            Bukti Transfer
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {paymentProofFile?.name || 'Bukti transfer'}
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setPaymentProofImage(null);
+                            setPaymentProofFile(null);
+                            toast.info('Bukti transfer dihapus');
+                          }}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <X className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <Alert className="mt-4 bg-blue-50 border-blue-200">
+                  <AlertCircle className="h-4 w-4 text-blue-600" />
+                  <AlertDescription className="text-sm text-blue-800">
+                    Pastikan bukti transfer jelas dan dapat dibaca. Pesanan akan diproses setelah penjual mengkonfirmasi pembayaran.
+                  </AlertDescription>
+                </Alert>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Product List */}
           <Card>
@@ -564,7 +724,7 @@ export function CheckoutPage({
               </div>
               <Button
                 onClick={handlePlaceOrder}
-                disabled={!validationComplete || validationErrors.length > 0 || !paymentMethod || isProcessingPayment}
+                disabled={!validationComplete || validationErrors.length > 0 || !paymentMethod || isProcessingPayment || (paymentMethod !== 'cod' && !paymentProofImage)}
                 className="w-full bg-green-600 hover:bg-green-700"
               >
                 {isProcessingPayment ? 'Memproses...' : 'Bayar Sekarang'}

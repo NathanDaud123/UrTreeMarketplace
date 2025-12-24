@@ -46,3 +46,47 @@ Thumbs.db
 *.tmp
 *.temp
 
+# Build outputs
+build/
+dist/
+docs/
+
+# Supabase
+.supabase/
+supabase/.temp/
+supabase/.branches/
+supabase/.temp/
+
+# Backup files
+*.backup
+*-backup.*
+index-backup.ts
+index-simple.ts
+
+# Database files (keep schema, ignore data dumps)
+*.sql.bak
+*.dump
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Package manager
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# TypeScript
+*.tsbuildinfo
+
+# Vite
+.vite/
+

@@ -91,6 +91,8 @@ CREATE TABLE IF NOT EXISTS seller_profiles (
   bank_name VARCHAR(100),
   bank_account_number VARCHAR(50),
   bank_account_name VARCHAR(255),
+  e_wallet_types TEXT[], -- Array of e-wallet types: 'dana', 'ovo', 'shopeepay', 'gopay'
+  e_wallet_phone VARCHAR(20), -- Phone number for e-wallet (same as shop_phone)
   kyc_status VARCHAR(20) DEFAULT 'pending' CHECK (kyc_status IN ('pending', 'approved', 'rejected')),
   kyc_verified_at TIMESTAMPTZ,
   
@@ -245,6 +247,7 @@ CREATE TABLE IF NOT EXISTS orders (
   payment_provider VARCHAR(50), -- 'midtrans', 'manual', dll
   payment_transaction_id VARCHAR(255),
   payment_snap_token TEXT, -- Untuk Midtrans
+  payment_proof_url TEXT, -- URL gambar bukti transfer untuk manual payment
   paid_at TIMESTAMPTZ,
   
   -- Order status

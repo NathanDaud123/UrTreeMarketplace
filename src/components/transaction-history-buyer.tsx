@@ -7,6 +7,8 @@ import { Package, MapPin, Star, RefreshCw, MessageCircle, FileText } from 'lucid
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from './ui/dialog';
 import { toast } from 'sonner@2.0.3';
 import { Textarea } from './ui/textarea';
+import { reviewAPI } from '../utils/api';
+import { useDatabaseContext } from '../utils/database-provider';
 
 export interface Transaction {
   id: string;
@@ -38,11 +40,13 @@ interface TransactionHistoryBuyerProps {
 }
 
 export function TransactionHistoryBuyer({ transactions, onViewDetail, onOpenChat }: TransactionHistoryBuyerProps) {
+  const { currentUser } = useDatabaseContext();
   const [activeTab, setActiveTab] = useState<string>('all');
   const [reviewDialog, setReviewDialog] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [reviewText, setReviewText] = useState('');
   const [rating, setRating] = useState(5);
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
 
   const getStatusBadge = (status: Transaction['status']) => {
     switch (status) {
@@ -71,11 +75,49 @@ export function TransactionHistoryBuyer({ transactions, onViewDetail, onOpenChat
     setReviewDialog(true);
   };
 
-  const submitReview = () => {
-    toast.success('✅ Ulasan berhasil dikirim! Terima kasih atas feedback Anda.');
-    setReviewDialog(false);
-    setReviewText('');
-    setRating(5);
+  const submitReview = async () => {
+    if (!currentUser || !currentUser.id) {
+      toast.error('Anda harus login untuk memberikan ulasan');
+      return;
+    }
+    
+    if (!selectedTransaction) {
+      toast.error('Transaksi tidak ditemukan');
+      return;
+    }
+    
+    if (!reviewText.trim()) {
+      toast.error('Mohon isi ulasan Anda');
+      return;
+    }
+    
+    if (!selectedTransaction.items[0]?.productId) {
+      toast.error('Produk tidak ditemukan');
+      return;
+    }
+    
+    setIsSubmittingReview(true);
+    try {
+      await reviewAPI.create({
+        productId: selectedTransaction.items[0].productId,
+        orderId: selectedTransaction.id,
+        userId: currentUser.id,
+        rating: rating,
+        reviewText: reviewText.trim(),
+        title: null
+      });
+      
+      toast.success('✅ Ulasan berhasil dikirim! Terima kasih atas feedback Anda.');
+      setReviewDialog(false);
+      setReviewText('');
+      setRating(5);
+      setSelectedTransaction(null);
+    } catch (error: any) {
+      console.error('Error submitting review:', error);
+      toast.error('Gagal mengirim ulasan: ' + (error.message || 'Unknown error'));
+    } finally {
+      setIsSubmittingReview(false);
+    }
   };
 
   const handleTrackOrder = (trackingNumber?: string) => {
@@ -368,9 +410,10 @@ export function TransactionHistoryBuyer({ transactions, onViewDetail, onOpenChat
               <div className="flex gap-2">
                 <Button
                   onClick={submitReview}
+                  disabled={isSubmittingReview}
                   className="flex-1 bg-green-600 hover:bg-green-700"
                 >
-                  Kirim Ulasan
+                  {isSubmittingReview ? 'Mengirim...' : 'Kirim Ulasan'}
                 </Button>
                 <Button
                   onClick={() => setReviewDialog(false)}

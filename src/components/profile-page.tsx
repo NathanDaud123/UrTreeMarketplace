@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import type { User as UserType } from '../App';
 import { toast } from 'sonner@2.0.3';
+import { useDatabaseContext } from '../utils/database-provider';
 import {
   Dialog,
   DialogContent,
@@ -46,12 +47,25 @@ interface ProfilePageProps {
 }
 
 export function ProfilePage({ user, onUpdateUser, onNavigateToSellerRegistration }: ProfilePageProps) {
+  const { sellerProducts, sellerOrders, loadSellerProducts, loadSellerOrders } = useDatabaseContext();
   const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState(user.name);
   const [editedEmail, setEditedEmail] = useState(user.email);
   const [phone, setPhone] = useState(user.phone || '');
   const [address, setAddress] = useState(user.address || '');
   const [city, setCity] = useState(user.city || '');
+  
+  // Load seller data when user is seller
+  useEffect(() => {
+    if (user.role === 'seller') {
+      loadSellerProducts().catch(console.error);
+      loadSellerOrders().catch(console.error);
+    }
+  }, [user.role, loadSellerProducts, loadSellerOrders]);
+  
+  // Calculate stats for seller
+  const totalProducts = sellerProducts?.length || 0;
+  const totalTransactions = sellerOrders?.length || 0;
 
   const handleSaveProfile = async () => {
     if (!editedName || !editedEmail) {
@@ -180,7 +194,7 @@ export function ProfilePage({ user, onUpdateUser, onNavigateToSellerRegistration
                         </div>
                         <div>
                           <p className="text-gray-500">Total Produk</p>
-                          <p className="font-semibold">0 Produk</p>
+                          <p className="font-semibold">{totalProducts} Produk</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3 text-sm">
@@ -189,7 +203,7 @@ export function ProfilePage({ user, onUpdateUser, onNavigateToSellerRegistration
                         </div>
                         <div>
                           <p className="text-gray-500">Penjualan</p>
-                          <p className="font-semibold">0 Transaksi</p>
+                          <p className="font-semibold">{totalTransactions} Transaksi</p>
                         </div>
                       </div>
                     </>
