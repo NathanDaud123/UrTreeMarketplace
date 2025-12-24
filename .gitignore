@@ -10,7 +10,7 @@ node_modules/.vite/
 # Testing
 coverage/
 
-# Production
+# Production / Build outputs
 build/
 dist/
 docs/
@@ -46,11 +46,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
-
-# Build outputs
-build/
-dist/
-docs/
 
 # Supabase
 .supabase/
