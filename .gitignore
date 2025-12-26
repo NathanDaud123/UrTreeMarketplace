@@ -86,3 +86,18 @@ pnpm-lock.yaml
 # Vite
 .vite/
 
+# Documentation files (may contain sensitive info)
+*.md
+!README.md
+
+# SQL files with sensitive data (keep schema.sql, ignore others)
+create_*.sql
+*_secrets.sql
+*_admin*.sql
+fix_*.sql
+
+# Sensitive configuration files
+*_SECRETS.txt
+*_SECRETS.md
+*_KEYS.txt
+*_KEYS.md
