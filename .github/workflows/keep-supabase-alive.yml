@@ -1,0 +1,50 @@
+name: Keep Supabase Alive
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping-supabase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    steps:
+      - name: Ping Supabase Health Check
+        run: |
+          echo "🔄 Pinging Supabase to keep it alive..."
+          SUPABASE_URL="${{ secrets.VITE_SUPABASE_URL }}"
+          if [ -z "$SUPABASE_URL" ]; then
+            SUPABASE_URL="https://drrczqfikcyyqwqsncpk.supabase.co"
+          fi
+          HEALTH_URL="${SUPABASE_URL}/functions/v1/make-server-0eb859c3/health"
+          if curl -f -s -X GET "$HEALTH_URL" \
+            -H "Authorization: Bearer ${{ secrets.VITE_SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json" \
+            --max-time 30 \
+            --retry 2 \
+            --retry-delay 1; then
+            echo "✅ Health check endpoint responded successfully"
+          else
+            REST_URL="${SUPABASE_URL}/rest/v1/users?select=id&limit=1"
+            curl -f -s -X GET "$REST_URL" \
+              -H "apikey: ${{ secrets.VITE_SUPABASE_ANON_KEY }}" \
+              -H "Authorization: Bearer ${{ secrets.VITE_SUPABASE_ANON_KEY }}" \
+              -H "Content-Type: application/json" \
+              --max-time 30 \
+              --retry 2 \
+              --retry-delay 1 || exit 1
+          fi
+      - name: Ping Supabase Auth API
+        run: |
+          SUPABASE_URL="${{ secrets.VITE_SUPABASE_URL }}"
+          if [ -z "$SUPABASE_URL" ]; then
+            SUPABASE_URL="https://drrczqfikcyyqwqsncpk.supabase.co"
+          fi
+          AUTH_URL="${SUPABASE_URL}/auth/v1/health"
+          curl -f -s -X GET "$AUTH_URL" \
+            -H "apikey: ${{ secrets.VITE_SUPABASE_ANON_KEY }}" \
+            --max-time 30 \
+            --retry 2 \
+            --retry-delay 1 || echo "⚠️ Auth health check failed (non-critical)"
