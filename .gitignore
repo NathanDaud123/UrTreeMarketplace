@@ -100,3 +100,9 @@ fix_*.sql
 *_SECRETS.md
 *_KEYS.txt
 *_KEYS.md
+
+# Helper scripts (not needed in repo)
+git-workflow.ps1
+git-workflow.sh
+*.ps1
+*.sh
